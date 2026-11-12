@@ -1,0 +1,9 @@
+packages:
+  - "apps/*"
+  - "packages/*"
+
+# Build scripts we deliberately do not run (from the Next.js template).
+ignoredBuiltDependencies:
+  - esbuild
+  - sharp
+  - unrs-resolver

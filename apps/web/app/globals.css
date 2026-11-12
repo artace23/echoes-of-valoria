@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+/* Palette from docs/ART_DIRECTION.md. Use these tokens, not raw hex values. */
+@theme {
+  --color-void: #090a0d;
+  --color-surface: #15171d;
+  --color-raised: #20232b;
+  --color-gold: #c5a15b;
+  --color-gold-muted: #8e7444;
+  --color-blood: #a33c46;
+  --color-ink: #e8e2d7;
+  --color-ink-muted: #a7a19a;
+}
+
+@theme inline {
+  --font-display: var(--font-cinzel), ui-serif, Georgia, serif;
+  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
+}
+
+body {
+  background: var(--color-void);
+  color: var(--color-ink);
+}

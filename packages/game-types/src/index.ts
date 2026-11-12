@@ -1,0 +1,22 @@
+// Shared domain types. No runtime code and no platform imports.
+
+export type CharacterClassId = "warrior";
+
+export interface CharacterClassDefinition {
+  id: CharacterClassId;
+  name: string;
+  description: string;
+}
+
+export type LocationId = "ashen-village" | "whispering-forest";
+
+export type LocationKind = "settlement" | "wilderness";
+
+export interface LocationDefinition {
+  id: LocationId;
+  name: string;
+  kind: LocationKind;
+  description: string;
+  /** Minimum character level needed to enter. */
+  requiredLevel: number;
+}
