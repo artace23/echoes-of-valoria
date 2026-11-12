@@ -46,7 +46,7 @@ export function GameView() {
         aria-label="Echoes of Valoria game view"
         className="block h-full w-full touch-none outline-none"
       />
-      {game && <GameHud store={game.store} />}
+      {game && <GameHud store={game.store} actions={game.actions} />}
       {!game && !error && (
         <p className="absolute inset-0 flex items-center justify-center font-display tracking-[0.3em] text-gold-muted">
           Loading…

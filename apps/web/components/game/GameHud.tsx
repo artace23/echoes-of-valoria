@@ -1,8 +1,10 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { DEFAULT_COMBAT_CONFIG } from "@valoria/game-core";
+import type { GameActions } from "@/game/engine/createGame";
 import type { GameStore } from "@/game/state/GameStore";
+import { InventoryPanel } from "./InventoryPanel";
 
 function Bar({
   label,
@@ -86,13 +88,35 @@ const CONTROLS: [string, string][] = [
   ["Scroll", "Zoom"],
 ];
 
-export function GameHud({ store }: { store: GameStore }) {
+export function GameHud({
+  store,
+  actions,
+}: {
+  store: GameStore;
+  actions: GameActions;
+}) {
   const hud = useSyncExternalStore(
     store.subscribe,
     store.getSnapshot,
     store.getSnapshot,
   );
   const combat = DEFAULT_COMBAT_CONFIG;
+  const [inventoryOpen, setInventoryOpen] = useState(false);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.repeat) return;
+      if (event.code === "KeyI") {
+        // The panel needs a free cursor, so give the mouse back first.
+        if (document.pointerLockElement) document.exitPointerLock();
+        setInventoryOpen((open) => !open);
+      } else if (event.code === "Escape") {
+        setInventoryOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   return (
     <div className="pointer-events-none absolute inset-0 select-none">
@@ -167,6 +191,23 @@ export function GameHud({ store }: { store: GameStore }) {
         )}
       </div>
 
+      <button
+        type="button"
+        onClick={() => setInventoryOpen((open) => !open)}
+        aria-expanded={inventoryOpen}
+        className="pointer-events-auto absolute right-4 top-4 border border-gold-muted/50 bg-surface/80 px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-gold transition-colors hover:bg-gold hover:text-void"
+      >
+        Inventory <span className="text-ink-muted">(I)</span>
+      </button>
+      {inventoryOpen && (
+        <InventoryPanel
+          inventory={hud.inventory}
+          weaponId={hud.weaponId}
+          actions={actions}
+          onClose={() => setInventoryOpen(false)}
+        />
+      )}
+
       {hud.dead && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-void/60">
           <p className="font-display text-3xl tracking-[0.3em] text-blood">
@@ -204,6 +245,12 @@ export function GameHud({ store }: { store: GameStore }) {
             remaining={0}
             total={0}
             active={hud.blocking}
+          />
+          <Skill
+            hotkey="H"
+            name={`Potion ${hud.potionCount}`}
+            remaining={0}
+            total={0}
           />
         </ul>
         <ul className="flex flex-wrap justify-center gap-x-5 gap-y-1 border border-gold-muted/30 bg-surface/70 px-4 py-2 text-xs text-ink-muted">

@@ -1,6 +1,10 @@
+import type { Inventory } from "@valoria/game-core";
+import type { ItemId } from "@valoria/game-types";
+
 /**
- * Game state the HUD renders. Flat primitives only, and replaced rather than
- * mutated, so changes can be detected field by field.
+ * Game state the HUD renders. Every field is a primitive or an immutable
+ * object, and the snapshot is replaced rather than mutated, so changes can
+ * be detected field by field with a reference comparison.
  */
 export interface HudSnapshot {
   health: number;
@@ -24,6 +28,11 @@ export interface HudSnapshot {
   gold: number;
   attackPower: number;
   defense: number;
+  /** Immutable: replaced whenever its contents change. */
+  inventory: Inventory;
+  /** The equipped weapon, if any. */
+  weaponId: ItemId | null;
+  potionCount: number;
   /** Short-lived message such as a reward, or null. */
   notice: string | null;
   /** The enemy currently targeted, if any. */

@@ -2,18 +2,29 @@ import "@babylonjs/core/Collisions/collisionCoordinator";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
 import {
+  addItem,
+  countItem,
   createCharacterProgress,
+  createInventory,
   deriveStats,
+  equipWeapon,
   grantReward,
   isWithinArc,
+  rollDrops,
+  unequipWeapon,
+  useConsumable,
+  withEquipment,
   xpToNextLevel,
+  type Equipment,
 } from "@valoria/game-core";
-import { CORRUPTED_WOLF } from "@valoria/game-data";
+import { CORRUPTED_WOLF, getItem } from "@valoria/game-data";
+import type { ItemId } from "@valoria/game-types";
 import { ThirdPersonCamera } from "../camera/ThirdPersonCamera";
 import { TrainingDummy } from "../combat/TrainingDummy";
 import type { Enemy } from "../enemies/Enemy";
 import { WolfEnemy } from "../enemies/WolfEnemy";
 import { InputManager } from "../input/InputManager";
+import { PickupManager } from "../items/PickupManager";
 import { PlayerController } from "../player/PlayerController";
 import { GameStore, type HudSnapshot } from "../state/GameStore";
 import { createEnvironment } from "../world/createEnvironment";
@@ -25,12 +36,23 @@ const TARGET_RANGE = 12;
 /** Wolves in the encounter clearing, and how far from its centre they live. */
 const WOLF_COUNT = 3;
 const WOLF_HOME_RADIUS = 5;
-/** Seconds a reward notice stays on screen. */
+/** Seconds a notice stays on screen. */
 const NOTICE_SECONDS = 3.5;
+const POTION: ItemId = "health-potion";
+
+/** Things the HUD can ask the game to do. */
+export interface GameActions {
+  /** Use a consumable from the inventory. */
+  useItem(itemId: ItemId): void;
+  /** Equip a weapon from the inventory. */
+  equipItem(itemId: ItemId): void;
+  unequipWeapon(): void;
+}
 
 export interface GameHandle {
   /** Live game state for the HUD. */
   store: GameStore;
+  actions: GameActions;
   dispose(): void;
 }
 
@@ -53,10 +75,85 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
   for (const mesh of player.meshes) environment.addShadowCaster(mesh);
   const camera = new ThirdPersonCamera(scene, player.position);
 
+  // Character state. Rules live in game-core; this module only holds the
+  // current values and applies their effects to the player.
   let progress = createCharacterProgress();
-  player.applyStats(deriveStats(progress.level), true);
+  let inventory = addItem(createInventory(), getItem(POTION), 2).inventory;
+  let equipment: Equipment = { weapon: "rusty-sword" };
   let notice: string | null = null;
   let noticeTimer = 0;
+
+  const showNotice = (message: string) => {
+    notice = message;
+    noticeTimer = NOTICE_SECONDS;
+  };
+
+  /** Recompute stats from level and equipment and apply them to the player. */
+  const refreshStats = (restore: boolean) => {
+    player.applyStats(
+      withEquipment(deriveStats(progress.level), equipment, getItem),
+      restore,
+    );
+    const weapon = equipment.weapon ? getItem(equipment.weapon) : null;
+    player.setWeaponVisual(weapon?.kind === "weapon" ? weapon : null);
+  };
+  refreshStats(true);
+
+  const pickups = new PickupManager(scene);
+  // Starting-area potion, and a better sword on the way to the wolves.
+  pickups.spawn(
+    getItem(POTION),
+    environment.spawnPoint.x + 3.5,
+    environment.spawnPoint.z,
+  );
+  pickups.spawn(
+    getItem("iron-sword"),
+    environment.spawnPoint.x,
+    (environment.spawnPoint.z + environment.encounterArea.z) / 2,
+  );
+
+  const actions: GameActions = {
+    useItem(itemId) {
+      const item = getItem(itemId);
+      const result = useConsumable(
+        inventory,
+        item,
+        player.health,
+        player.healthMax,
+      );
+      if (!result) {
+        if (item.kind === "consumable" && countItem(inventory, itemId) > 0) {
+          showNotice(
+            player.dead ? "You cannot do that now" : "Already at full health",
+          );
+        }
+        return;
+      }
+      inventory = result.inventory;
+      player.heal(result.healed);
+      showNotice(`${item.name}: +${result.healed} health`);
+    },
+    equipItem(itemId) {
+      const item = getItem(itemId);
+      const result = equipWeapon(inventory, equipment, item, getItem);
+      if (!result) return;
+      inventory = result.inventory;
+      equipment = result.equipment;
+      refreshStats(false);
+      showNotice(`Equipped ${item.name}`);
+    },
+    unequipWeapon() {
+      const result = unequipWeapon(inventory, equipment, getItem);
+      if (!result) {
+        if (equipment.weapon) showNotice("Inventory is full");
+        return;
+      }
+      inventory = result.inventory;
+      equipment = result.equipment;
+      refreshStats(false);
+      showNotice("Weapon unequipped");
+    },
+  };
 
   // Practice target on the west side of the starting circle.
   const dummy = new TrainingDummy(
@@ -75,13 +172,22 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       onDeath: (reward, wolf) => {
         const result = grantReward(progress, reward);
         progress = result.progress;
-        notice = `${wolf.name} slain: +${reward.xp} XP, +${reward.gold} gold`;
+        showNotice(`${wolf.name} slain: +${reward.xp} XP, +${reward.gold} gold`);
         if (result.levelsGained > 0) {
           // Levelling up raises stats and fully restores the Warrior.
-          player.applyStats(deriveStats(progress.level), true);
-          notice = `Level up! You are now level ${progress.level}`;
+          refreshStats(true);
+          showNotice(`Level up! You are now level ${progress.level}`);
         }
-        noticeTimer = NOTICE_SECONDS;
+
+        // Item drops land where the wolf fell, slightly spread out.
+        const drops = rollDrops(CORRUPTED_WOLF.drops, Math.random);
+        drops.forEach((itemId, dropIndex) => {
+          pickups.spawn(
+            getItem(itemId),
+            wolf.position.x + dropIndex * 0.6,
+            wolf.position.z,
+          );
+        });
       },
     });
   });
@@ -113,6 +219,17 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
     return best;
   };
 
+  /** Try to put a world pickup into the inventory. */
+  const collect = (itemId: ItemId): boolean => {
+    if (player.dead) return false;
+    const item = getItem(itemId);
+    const result = addItem(inventory, item);
+    if (result.added === 0) return false;
+    inventory = result.inventory;
+    showNotice(`Picked up ${item.name}`);
+    return true;
+  };
+
   const readSnapshot = (): HudSnapshot => {
     const target = findTarget();
     return {
@@ -133,6 +250,9 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       gold: progress.gold,
       attackPower: player.stats.attackPower,
       defense: player.stats.defense,
+      inventory,
+      weaponId: equipment.weapon,
+      potionCount: countItem(inventory, POTION),
       notice,
       targetName: target?.name ?? null,
       targetHealth: target?.health ?? 0,
@@ -144,6 +264,8 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
 
   scene.onBeforeRenderObservable.add(() => {
     const dt = Math.min(engine.getDeltaTime() / 1000, MAX_FRAME_SECONDS);
+
+    if (input.consumeUsePotion()) actions.useItem(POTION);
 
     const strike = player.update(
       input.readIntent(),
@@ -170,6 +292,7 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       }
     }
     for (const enemy of enemies) enemy.update(dt, player);
+    pickups.update(dt, player.position, collect);
 
     if (noticeTimer > 0) {
       noticeTimer -= dt;
@@ -188,8 +311,16 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       camera,
       dummy,
       wolves,
+      pickups,
+      actions,
       get progress() {
         return progress;
+      },
+      get inventory() {
+        return inventory;
+      },
+      get equipment() {
+        return equipment;
       },
     };
   }
@@ -200,6 +331,7 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
 
   return {
     store,
+    actions,
     dispose() {
       window.removeEventListener("resize", onResize);
       input.dispose();

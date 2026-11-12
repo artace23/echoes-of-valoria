@@ -22,7 +22,8 @@ prototype; progress is saved locally. Milestones 2–5 below describe the earlie
    XP/gold reward drops. Three wolves live in the encounter clearing.
 4. **Done** — Progression: level, XP, gold, and stats derived from level (health, stamina,
    attack power, defense). Levelling up restores the Warrior.
-5. Inventory and equipment: pick up, store, use potions, equip a weapon.
+5. **Done** — Inventory and equipment: world pickups and wolf drops, a 12-slot
+   inventory, health potions, and an equippable weapon that changes attack power.
 6. Quest: defeat three corrupted wolves, with XP and gold on completion.
 7. Local save/load and the remaining HUD (enemy health, cooldowns, inventory, quest).
 

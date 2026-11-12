@@ -44,4 +44,36 @@ export interface EnemyDefinition {
   defense: number;
   attackDamage: number;
   reward: RewardTable;
+  /** Items that may be left behind on death, each rolled independently. */
+  drops: readonly ItemDrop[];
+}
+
+export type ItemId = "health-potion" | "rusty-sword" | "iron-sword";
+
+interface ItemBase {
+  id: ItemId;
+  name: string;
+  description: string;
+  /** Stackable items share one inventory slot. */
+  stackable: boolean;
+}
+
+export interface ConsumableItem extends ItemBase {
+  kind: "consumable";
+  /** Health restored when used. */
+  healAmount: number;
+}
+
+export interface WeaponItem extends ItemBase {
+  kind: "weapon";
+  /** Added to the wielder's attack power while equipped. */
+  attackPower: number;
+}
+
+export type ItemDefinition = ConsumableItem | WeaponItem;
+
+export interface ItemDrop {
+  itemId: ItemId;
+  /** Probability from 0 to 1. */
+  chance: number;
 }

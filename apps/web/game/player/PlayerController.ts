@@ -191,6 +191,29 @@ export class PlayerController {
     return this.combat.cooldowns;
   }
 
+  /** Restore health, up to the maximum. Returns the amount restored. */
+  heal(amount: number): number {
+    if (this.dead) return 0;
+    const before = this.currentHealth;
+    this.currentHealth = Math.min(
+      this.characterStats.healthMax,
+      before + Math.max(0, amount),
+    );
+    return this.currentHealth - before;
+  }
+
+  /**
+   * Show the equipped weapon, or hide the sword when unarmed. Stronger
+   * weapons get a longer placeholder blade so the change is visible.
+   */
+  setWeaponVisual(weapon: { attackPower: number } | null): void {
+    this.sword.setEnabled(weapon !== null);
+    if (weapon) {
+      const scale = 1 + Math.min(0.35, weapon.attackPower * 0.04);
+      this.sword.scaling.set(1 + weapon.attackPower * 0.06, scale, 1);
+    }
+  }
+
   /** Horizontal direction the Warrior is facing. */
   get facing(): PlanarVector {
     return {

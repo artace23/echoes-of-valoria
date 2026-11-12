@@ -3,6 +3,8 @@
 import type {
   CharacterClassDefinition,
   EnemyDefinition,
+  ItemDefinition,
+  ItemId,
   LocationDefinition,
 } from "@valoria/game-types";
 
@@ -42,4 +44,36 @@ export const CORRUPTED_WOLF: EnemyDefinition = {
   defense: 0,
   attackDamage: 9,
   reward: { xp: 20, goldMin: 4, goldMax: 9 },
+  drops: [{ itemId: "health-potion", chance: 0.5 }],
 };
+
+export const ITEMS: Readonly<Record<ItemId, ItemDefinition>> = {
+  "health-potion": {
+    id: "health-potion",
+    name: "Health Potion",
+    description: "Restores 40 health.",
+    kind: "consumable",
+    stackable: true,
+    healAmount: 40,
+  },
+  "rusty-sword": {
+    id: "rusty-sword",
+    name: "Rusty Sword",
+    description: "A pitted blade that has seen better days.",
+    kind: "weapon",
+    stackable: false,
+    attackPower: 2,
+  },
+  "iron-sword": {
+    id: "iron-sword",
+    name: "Iron Sword",
+    description: "A well-balanced soldier's blade.",
+    kind: "weapon",
+    stackable: false,
+    attackPower: 7,
+  },
+};
+
+export function getItem(id: ItemId): ItemDefinition {
+  return ITEMS[id];
+}

@@ -12,9 +12,10 @@ physics engine is installed.
 
 - `packages/game-core`: rules as pure functions (e.g. `movement.ts`: walking, sprint and
   stamina, jump, gravity; `combat.ts`: attack timing, dodge, block, cooldowns, damage,
-  hit arcs; `enemyAi.ts`: idle/patrol/chase/attack state machine; `rewards.ts`; `progression.ts`: levels, XP, derived stats). No Babylon
+  hit arcs; `enemyAi.ts`: idle/patrol/chase/attack state machine; `rewards.ts`; `progression.ts`: levels, XP, derived stats; `inventory.ts`: items, equipment, drops). No Babylon
   or React imports; covered by Vitest.
-- `packages/game-data`: enemy definitions (health, damage, reward table).
+- `packages/game-data`: enemy definitions (health, damage, rewards, drops) and item
+  definitions.
 - `apps/web/game/`: the 3D runtime. Imports Babylon and `game-core`, never React.
   - `engine/createGame.ts`: engine and scene lifecycle, frame loop, dispose.
   - `world/createEnvironment.ts`: ground, scenery, lights, shadows, fog.
@@ -24,9 +25,10 @@ physics engine is installed.
   - `combat/TrainingDummy.ts`: stationary practice target with a telegraphed attack.
   - `enemies/Enemy.ts`: interface every strikeable target implements.
   - `enemies/WolfEnemy.ts`: placeholder wolf driven by the game-core AI.
+  - `items/PickupManager.ts`: collectable items lying in the world.
   - `state/GameStore.ts`: snapshot store the HUD subscribes to.
-- `apps/web/components/game/`: React canvas host and HUD. Reads `GameStore`; contains no
-  game rules.
+- `apps/web/components/game/`: React canvas host, HUD and inventory panel. Reads
+  `GameStore` and calls `GameActions` (use, equip, unequip); contains no game rules.
 
 ## Services
 - `services/game-server`: Node.js + Colyseus authoritative battle rooms.

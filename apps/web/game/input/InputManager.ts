@@ -3,10 +3,12 @@ import type { CombatIntent, MoveIntent } from "@valoria/game-core";
 const MOVE_KEYS = ["KeyW", "KeyA", "KeyS", "KeyD"];
 const LOOK_KEYS = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
 const COMBAT_KEYS = ["KeyF", "KeyR", "KeyQ", "KeyE"];
+const ITEM_KEYS = ["KeyH"];
 const GAME_KEYS = new Set([
   ...MOVE_KEYS,
   ...LOOK_KEYS,
   ...COMBAT_KEYS,
+  ...ITEM_KEYS,
   "ShiftLeft",
   "ShiftRight",
   "Space",
@@ -39,11 +41,13 @@ export interface LookDelta {
  *
  * Combat: F attack, R heavy attack, Q block (hold), E dodge. While the
  * pointer is locked, left click also attacks and right click blocks.
+ * H drinks a health potion.
  */
 export class InputManager {
   private readonly held = new Set<string>();
   private jumpQueued = false;
   private dodgeQueued = false;
+  private potionQueued = false;
   private readonly lockedButtons = new Set<number>();
   private lookX = 0;
   private lookY = 0;
@@ -97,6 +101,13 @@ export class InputManager {
     };
   }
 
+  /** True once per press of the quick-potion key. */
+  consumeUsePotion(): boolean {
+    const queued = this.potionQueued;
+    this.potionQueued = false;
+    return queued;
+  }
+
   /** Look input accumulated since the last call. */
   consumeLook(): LookDelta {
     const delta: LookDelta = {
@@ -143,6 +154,7 @@ export class InputManager {
     event.preventDefault();
     if (event.code === "Space" && !event.repeat) this.jumpQueued = true;
     if (event.code === "KeyE" && !event.repeat) this.dodgeQueued = true;
+    if (event.code === "KeyH" && !event.repeat) this.potionQueued = true;
     this.held.add(event.code);
   };
 
@@ -154,6 +166,7 @@ export class InputManager {
     this.held.clear();
     this.jumpQueued = false;
     this.dodgeQueued = false;
+    this.potionQueued = false;
     this.lockedButtons.clear();
     this.dragPointerId = null;
   };
