@@ -1,17 +1,20 @@
 import "@babylonjs/core/Meshes/instancedMesh";
 import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color3 } from "@babylonjs/core/Maths/math.color";
+import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
 import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder";
+import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder";
 import { CreateIcoSphere } from "@babylonjs/core/Meshes/Builders/icoSphereBuilder";
 import type { InstancedMesh } from "@babylonjs/core/Meshes/instancedMesh";
 import { Mesh } from "@babylonjs/core/Meshes/mesh";
 import { VertexData } from "@babylonjs/core/Meshes/mesh.vertexData";
+import type { Texture } from "@babylonjs/core/Materials/Textures/texture";
 import type { Scene } from "@babylonjs/core/scene";
 
 /** [diffuse r, g, b] and optional [emissive r, g, b]. */
 const PALETTE = {
-  earth: [[0.16, 0.19, 0.14]],
+  earth: [[0.165, 0.165, 0.13]],
   packedEarth: [[0.25, 0.22, 0.19]],
   dirt: [[0.27, 0.22, 0.16]],
   corruptedEarth: [[0.26, 0.13, 0.13]],
@@ -52,6 +55,14 @@ export interface PlaceOptions {
 
 type Vec3 = readonly [number, number, number];
 
+/** A tileable ground texture set for one material. */
+export interface Surface {
+  color: Texture;
+  normal?: Texture;
+  /** One repeat of the texture covers this many metres. */
+  metres: number;
+}
+
 /**
  * Builds static scenery cheaply. Every prop is an instance of one hidden
  * template per (shape, material), so the whole world renders in a few dozen
@@ -61,11 +72,12 @@ export class WorldKit {
   private readonly materials = new Map<MaterialKey, StandardMaterial>();
   private readonly templates = new Map<string, Mesh>();
   private count = 0;
+  private readonly surfaces = new Map<MaterialKey, Surface>();
   /**
    * Props that should cast shadows. The environment decides which of them
    * are near enough to the player to be worth drawing into the shadow map.
    */
-  readonly shadowCasters: InstancedMesh[] = [];
+  readonly shadowCasters: AbstractMesh[] = [];
 
   constructor(readonly scene: Scene) {}
 
@@ -96,6 +108,73 @@ export class WorldKit {
       this.materials.set(key, material);
     }
     return material;
+  }
+
+  /** Give a ground material a tileable texture set. */
+  setSurface(key: MaterialKey, surface: Surface): void {
+    this.surfaces.set(key, surface);
+  }
+
+  hasSurface(key: MaterialKey): boolean {
+    return this.surfaces.has(key);
+  }
+
+  /**
+   * A material for one flat piece of ground of the given size, with its
+   * textures repeated so a tile always covers the same number of metres.
+   * Falls back to the plain material when no texture set was given.
+   */
+  groundMaterial(
+    key: MaterialKey,
+    metresU: number,
+    metresV: number,
+  ): StandardMaterial {
+    const surface = this.surfaces.get(key);
+    if (!surface) return this.material(key);
+
+    const material = new StandardMaterial(
+      `mat-${key}-${this.count++}`,
+      this.scene,
+    );
+    // Slightly dimmed: photographed ground is brighter than a night scene.
+    material.diffuseColor = new Color3(0.78, 0.78, 0.8);
+    material.specularColor = new Color3(0.05, 0.055, 0.07);
+    material.specularPower = 18;
+    const tile = (texture: Texture) => {
+      const copy = texture.clone();
+      copy.uScale = metresU / surface.metres;
+      copy.vScale = metresV / surface.metres;
+      copy.anisotropicFilteringLevel = 8;
+      return copy;
+    };
+    material.diffuseTexture = tile(surface.color);
+    if (surface.normal) material.bumpTexture = tile(surface.normal);
+    return material;
+  }
+
+  /**
+   * A flat strip lying on the ground, e.g. a road. `length` runs along the
+   * strip's local X before rotation.
+   */
+  strip(
+    key: MaterialKey,
+    length: number,
+    width: number,
+    position: Vec3,
+    rotY: number,
+  ): Mesh {
+    const mesh = CreateGround(
+      `strip-${key}-${this.count++}`,
+      { width: length, height: width },
+      this.scene,
+    );
+    mesh.position.set(position[0], position[1], position[2]);
+    mesh.rotation.y = rotY;
+    mesh.material = this.groundMaterial(key, length, width);
+    mesh.receiveShadows = true;
+    mesh.isPickable = false;
+    mesh.freezeWorldMatrix();
+    return mesh;
   }
 
   /** A box of the given [width, height, depth] centred at `position`. */
@@ -173,7 +252,7 @@ export class WorldKit {
       this.scene,
     );
     mesh.position.set(x, y, z);
-    mesh.material = this.material(key);
+    mesh.material = this.groundMaterial(key, radius * 2, radius * 2);
     mesh.receiveShadows = true;
     mesh.isPickable = false;
     mesh.freezeWorldMatrix();

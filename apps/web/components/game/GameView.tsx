@@ -19,9 +19,18 @@ export function GameView() {
     import("@/game/engine/createGame")
       .then(({ createGame }) => {
         const canvas = canvasRef.current;
-        if (cancelled || !canvas) return;
-        handle = createGame(canvas);
-        setGame(handle);
+        if (cancelled || !canvas) return null;
+        return createGame(canvas);
+      })
+      .then((created) => {
+        if (!created) return;
+        if (cancelled) {
+          // Unmounted while models were loading: release it straight away.
+          created.dispose();
+          return;
+        }
+        handle = created;
+        setGame(created);
       })
       .catch((cause: unknown) => {
         console.error(cause);

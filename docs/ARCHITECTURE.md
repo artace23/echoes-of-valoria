@@ -24,6 +24,11 @@ physics engine is installed.
   - `world/createEnvironment.ts`: ground, lights, player-following shadows, and fog and
     ambient light blended between village and forest.
   - `world/WorldKit.ts`: places static props as frozen instances of shared templates.
+  - `assets/AssetLibrary.ts`: loads GLB/glTF models from the asset manifest and places
+    instances with LOD and collision proxies. See `ASSET_PIPELINE.md`.
+  - `rendering/createRenderPipeline.ts`: HDR, tone mapping, bloom, anti-aliasing.
+  - `world/groundDetail.ts`, `world/buildGrass.ts`: procedural stand-ins for ground
+    textures and foliage, to be replaced by sourced art.
   - `world/buildVillage.ts`, `world/buildForest.ts`: the scenery itself.
   - `npcs/NpcManager.ts`: villager figures, quest markers, who is in talking range.
   - `audio/AmbientAudio.ts`: procedural wind and forest ambience (Web Audio, no files).
@@ -53,6 +58,11 @@ Rendering budget: the world is about 1,200 props drawn as instances of roughly 5
 templates. Only four dynamic lights exist (StandardMaterial's per-mesh limit); lanterns
 and windows are self-lit materials. The shadow map covers a fixed area around the
 player and only draws scenery near it. Stationary enemies skip collision checks.
+Shadows use two cascades; a third cost about 4 ms per frame. Grass is drawn as one
+thin-instanced mesh per 22 m patch, culled by view and by distance. Measured at
+1280x720 on a GeForce MX350 with the GPU included: 9-16 ms per frame. The shadow pass
+is bound by draw calls, so distant characters, tiny parts and far-off small props do not
+cast shadows; see `ASSET_PIPELINE.md`.
 
 ## Services
 - `services/game-server`: Node.js + Colyseus authoritative battle rooms.

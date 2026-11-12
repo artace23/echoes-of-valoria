@@ -1,11 +1,19 @@
 import { WORLD } from "@valoria/game-data";
 import type { RoadSegment, WorldPoint } from "@valoria/game-types";
+import type { AssetLibrary, Placement } from "../assets/AssetLibrary";
 import type { WorldKit } from "./WorldKit";
 
 const TREE_COUNT = 300;
 const ROCK_COUNT = 70;
 const LOG_COUNT = 16;
 const MUSHROOM_COUNT = 60;
+/**
+ * Ferns, stumps and fallen branches. These have no placeholder (primitives
+ * would not read as any of them), so they appear only once sourced.
+ */
+const UNDERGROWTH_COUNT = 260;
+const STUMP_COUNT = 26;
+const DEBRIS_COUNT = 110;
 
 /** Deterministic PRNG so the forest is the same on every load. */
 function mulberry32(seed: number): () => number {
@@ -40,7 +48,7 @@ function distanceToSegment(point: WorldPoint, road: RoadSegment): number {
 }
 
 /** True where scenery must stay clear: the village, roads and clearings. */
-function isReserved(point: WorldPoint, margin: number): boolean {
+export function isReserved(point: WorldPoint, margin: number): boolean {
   const { village, villageWallRadius, roads, spawnZones } = WORLD;
   if (
     Math.hypot(point.x - village.center.x, point.z - village.center.z) <
@@ -62,14 +70,26 @@ function isReserved(point: WorldPoint, margin: number): boolean {
   );
 }
 
+/** How many props came from sourced models, and how many are placeholders. */
+export interface ForestReport {
+  models: number;
+  placeholders: number;
+}
+
 /**
  * The Whispering Forest: roads and trails, wolf clearings, and scattered
  * trees, rocks, fallen logs and glowing fungi around the whole map.
+ *
+ * Every prop asks the asset library for a sourced model first, by role. Only
+ * when none has been sourced does it fall back to the primitive placeholder,
+ * so dropping a model into the manifest upgrades the forest with no code
+ * change.
  */
-export function buildForest(kit: WorldKit): void {
+export function buildForest(kit: WorldKit, assets: AssetLibrary): ForestReport {
   const random = mulberry32(90210);
   const range = (min: number, max: number) => min + random() * (max - min);
   const limit = WORLD.halfExtent - 2;
+  const report: ForestReport = { models: 0, placeholders: 0 };
 
   /** A random free spot, or null if none was found. */
   const freeSpot = (margin: number): WorldPoint | null => {
@@ -80,19 +100,41 @@ export function buildForest(kit: WorldKit): void {
     return null;
   };
 
+  /**
+   * Place a sourced model for this role, picking a variant at random.
+   * Returns false if none is available, so the caller can fall back.
+   */
+  const placeModel = (role: string, placement: Placement): boolean => {
+    const variants = assets.variants(role);
+    if (variants.length === 0) {
+      report.placeholders++;
+      return false;
+    }
+    const id = variants[Math.floor(random() * variants.length)];
+    const placed = id ? assets.place(id, placement) : null;
+    if (!placed) {
+      report.placeholders++;
+      return false;
+    }
+    if (placed.castShadows) kit.shadowCasters.push(...placed.meshes);
+    report.models++;
+    return true;
+  };
+
   // Roads and trails, as flat strips just above the ground.
   WORLD.roads.forEach((road, index) => {
     const dx = road.to.x - road.from.x;
     const dz = road.to.z - road.from.z;
-    kit.box(
+    kit.strip(
       "dirt",
-      [Math.hypot(dx, dz), 0.02, road.width],
+      Math.hypot(dx, dz),
+      road.width,
       [
         (road.from.x + road.to.x) / 2,
         0.05 + index * 0.004,
         (road.from.z + road.to.z) / 2,
       ],
-      { rotY: Math.atan2(-dz, dx) },
+      Math.atan2(-dz, dx),
     );
   });
 
@@ -101,18 +143,34 @@ export function buildForest(kit: WorldKit): void {
     kit.disc("corruptedEarth", zone.radius, zone.center.x, zone.center.z);
   }
   const [shrine, hollow, glade] = WORLD.spawnZones;
-  if (shrine) buildShrine(kit, shrine.center, shrine.radius, range);
+  if (shrine) buildShrine(kit, shrine.center, shrine.radius, range, placeModel);
   if (hollow) buildHollow(kit, hollow.center, range);
   if (glade) buildGlade(kit, glade.center, range);
 
   buildAbandonedCart(kit);
 
-  // Trees. Most are pines; some are bare, more so the deeper in you go.
+  // Trees. Most are conifers; some are bare, more so the deeper in you go.
   for (let i = 0; i < TREE_COUNT; i++) {
     const spot = freeSpot(1);
     if (!spot) continue;
     const scale = range(0.8, 1.6);
     const bare = random() < 0.12 + Math.max(0, spot.z) / 400;
+    const turn = range(0, Math.PI * 2);
+    // Sourced trees are modelled at full height, so they vary less in
+    // scale than the placeholders do.
+    const tree: Placement = {
+      x: spot.x,
+      z: spot.z,
+      rotationY: turn,
+      scale: 0.62 + scale * 0.38,
+    };
+    if (
+      (bare && placeModel("tree-dead", tree)) ||
+      placeModel("tree-conifer", tree)
+    ) {
+      continue;
+    }
+    // Placeholder: a cylinder trunk under a cone canopy.
     kit.cylinder("bark", 0.5 * scale, 3 * scale, [spot.x, 1.5 * scale, spot.z], {
       collide: true,
       shadow: true,
@@ -122,7 +180,7 @@ export function buildForest(kit: WorldKit): void {
       (bare ? 2.2 : 3.4) * scale,
       (bare ? 3.6 : 5) * scale,
       [spot.x, (2.4 + (bare ? 1.8 : 2.5)) * scale, spot.z],
-      { rotY: range(0, Math.PI), shadow: true },
+      { rotY: turn, shadow: true },
     );
   }
 
@@ -130,20 +188,36 @@ export function buildForest(kit: WorldKit): void {
     const spot = freeSpot(0.6);
     if (!spot) continue;
     const size = range(0.5, 1.8);
+    const turn = range(0, Math.PI * 2);
+    if (
+      placeModel("rock", {
+        x: spot.x,
+        z: spot.z,
+        rotationY: turn,
+        // Scanned rocks are about 2 m across at scale 1.
+        scale: 0.35 + size * 0.45,
+      })
+    ) {
+      continue;
+    }
+    // Placeholder: a faceted boulder.
     kit.rock(
       "rock",
       [size * range(0.8, 1.3), size * 0.7, size * range(0.8, 1.3)],
       [spot.x, size * 0.35, spot.z],
-      { rotY: range(0, Math.PI * 2), collide: true, shadow: true },
+      { rotY: turn, collide: true, shadow: true },
     );
   }
 
   for (let i = 0; i < LOG_COUNT; i++) {
     const spot = freeSpot(2.5);
     if (!spot) continue;
+    const turn = range(0, Math.PI);
+    if (placeModel("log", { x: spot.x, z: spot.z, rotationY: turn })) continue;
+    // Placeholder: a cylinder on its side.
     kit.cylinder("bark", range(0.5, 0.8), range(3.5, 6), [spot.x, 0.32, spot.z], {
       rotZ: Math.PI / 2,
-      rotY: range(0, Math.PI),
+      rotY: turn,
       collide: true,
       shadow: true,
     });
@@ -154,9 +228,46 @@ export function buildForest(kit: WorldKit): void {
     const spot = freeSpot(0.3);
     if (!spot) continue;
     const size = range(0.1, 0.2);
+    if (
+      placeModel("fungus", {
+        x: spot.x,
+        z: spot.z,
+        rotationY: range(0, Math.PI * 2),
+        scale: size / 0.15,
+      })
+    ) {
+      continue;
+    }
+    // Placeholder: a stalk and a glowing cap.
     kit.cylinder("bark", size * 0.5, size * 2, [spot.x, size, spot.z]);
     kit.cone("spore", size * 3, size * 1.4, [spot.x, size * 2.5, spot.z]);
   }
+
+  // Ferns, stumps and fallen branches: only where a model exists.
+  const scatter = (
+    role: string,
+    count: number,
+    margin: number,
+    minScale: number,
+    maxScale: number,
+  ) => {
+    if (assets.variants(role).length === 0) return;
+    for (let i = 0; i < count; i++) {
+      const spot = freeSpot(margin);
+      if (!spot) continue;
+      placeModel(role, {
+        x: spot.x,
+        z: spot.z,
+        rotationY: range(0, Math.PI * 2),
+        scale: range(minScale, maxScale),
+      });
+    }
+  };
+  scatter("undergrowth", UNDERGROWTH_COUNT, 0.2, 0.9, 1.7);
+  scatter("stump", STUMP_COUNT, 1, 0.8, 1.3);
+  scatter("debris", DEBRIS_COUNT, 0, 1, 2.2);
+
+  return report;
 }
 
 /** A ring of standing stones around a toppled altar. Open to the south. */
@@ -165,6 +276,7 @@ function buildShrine(
   center: WorldPoint,
   radius: number,
   range: (min: number, max: number) => number,
+  placeModel: (role: string, placement: Placement) => boolean,
 ): void {
   const stones = 11;
   for (let i = 0; i < stones; i++) {
@@ -172,21 +284,29 @@ function buildShrine(
     // Leave a gap where the road comes in from the south.
     if (Math.abs(Math.cos(angle)) < 0.35 && Math.sin(angle) < 0) continue;
     const height = range(2.6, 4.4);
-    kit.box(
-      "darkStone",
-      [1.4, height, 0.85],
-      [
-        center.x + Math.cos(angle) * radius,
-        height / 2,
-        center.z + Math.sin(angle) * radius,
-      ],
-      {
-        rotY: -angle + Math.PI / 2 + range(-0.2, 0.2),
-        rotZ: range(-0.06, 0.06),
-        collide: true,
-        shadow: true,
-      },
-    );
+    const x = center.x + Math.cos(angle) * radius;
+    const z = center.z + Math.sin(angle) * radius;
+    const turn = -angle + Math.PI / 2 + range(-0.2, 0.2);
+    const lean = range(-0.06, 0.06);
+    if (
+      placeModel("standing-stone", {
+        x,
+        z,
+        rotationY: turn,
+        scale: height / 3.5,
+      }) ||
+      // No standing stone sourced: ring the shrine with large boulders.
+      placeModel("rock", { x, z, rotationY: turn, scale: height / 2.2 })
+    ) {
+      continue;
+    }
+    // Placeholder: an upright slab.
+    kit.box("darkStone", [1.4, height, 0.85], [x, height / 2, z], {
+      rotY: turn,
+      rotZ: lean,
+      collide: true,
+      shadow: true,
+    });
   }
   kit.box("darkStone", [2.6, 0.5, 1.4], [center.x, 0.45, center.z + 6.5], {
     rotY: 0.2,

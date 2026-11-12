@@ -1,5 +1,6 @@
 import "@babylonjs/core/Collisions/collisionCoordinator";
 import { Engine } from "@babylonjs/core/Engines/engine";
+import { Vector3 } from "@babylonjs/core/Maths/math.vector";
 import { Scene } from "@babylonjs/core/scene";
 import {
   DEFAULT_INVENTORY_CAPACITY,
@@ -42,6 +43,7 @@ import {
   getItem,
 } from "@valoria/game-data";
 import type { ItemId, NpcDefinition } from "@valoria/game-types";
+import { AssetLibrary } from "../assets/AssetLibrary";
 import { AmbientAudio } from "../audio/AmbientAudio";
 import { ThirdPersonCamera } from "../camera/ThirdPersonCamera";
 import { TrainingDummy } from "../combat/TrainingDummy";
@@ -51,6 +53,7 @@ import { InputManager } from "../input/InputManager";
 import { PickupManager } from "../items/PickupManager";
 import { NpcManager } from "../npcs/NpcManager";
 import { PlayerController } from "../player/PlayerController";
+import { createRenderPipeline } from "../rendering/createRenderPipeline";
 import { SaveStorage } from "../save/SaveStorage";
 import {
   GameStore,
@@ -59,6 +62,13 @@ import {
 } from "../state/GameStore";
 import { TRAINING_YARD } from "../world/buildVillage";
 import { createEnvironment } from "../world/createEnvironment";
+
+/**
+ * Parts too small for their shadow to be noticed. Each shadow-casting mesh
+ * is a draw call per cascade, so these are left out.
+ */
+const TINY_PART = /ear|eye|snout|tail|nose|belt|visor/;
+const castsShadow = (mesh: { name: string }) => !TINY_PART.test(mesh.name);
 
 /** Longest simulated step, so a stalled tab cannot tunnel through collisions. */
 const MAX_FRAME_SECONDS = 0.05;
@@ -128,20 +138,34 @@ function seededRandom(seed: number): () => number {
 /**
  * Creates the engine, scene and game systems on the given canvas and starts
  * the render loop. Call `dispose()` to stop and release everything.
+ *
+ * Asynchronous because sourced 3D models are loaded before the world is
+ * built. With no models sourced this resolves almost immediately.
  */
-export function createGame(canvas: HTMLCanvasElement): GameHandle {
+export async function createGame(
+  canvas: HTMLCanvasElement,
+): Promise<GameHandle> {
   const engine = new Engine(canvas, true, { stencil: false });
   const scene = new Scene(engine);
 
-  const environment = createEnvironment(scene);
+  const assets = await AssetLibrary.load(scene);
+
+  // The camera exists before the world so cascaded shadows can follow it.
+  const camera = new ThirdPersonCamera(
+    scene,
+    new Vector3(WORLD.spawnPoint.x, 1.5, WORLD.spawnPoint.z),
+  );
+  const renderPipeline = createRenderPipeline(scene, camera.camera);
+  const environment = createEnvironment(scene, assets, camera.camera);
   const input = new InputManager(canvas);
   const audio = new AmbientAudio();
   const player = new PlayerController(scene, {
     spawnPoint: environment.spawnPoint,
     worldHalfExtent: environment.worldHalfExtent,
   });
-  for (const mesh of player.meshes) environment.addShadowCaster(mesh);
-  const camera = new ThirdPersonCamera(scene, player.position);
+  for (const mesh of player.meshes.filter(castsShadow)) {
+    environment.addShadowCaster(mesh);
+  }
 
   // Character state. Rules live in game-core; this module only holds the
   // current values and applies their effects to the world.
@@ -241,7 +265,9 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
 
   // --- Villagers and conversation -----------------------------------------
   const npcs = new NpcManager(scene, NPCS);
-  for (const mesh of npcs.meshes) environment.addShadowCaster(mesh);
+  for (const mesh of npcs.meshes.filter(castsShadow)) {
+    environment.addShadowCaster(mesh);
+  }
 
   /** Show a quest marker over whoever the quest currently points to. */
   const syncQuestMarkers = () => {
@@ -429,7 +455,9 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
 
   const enemies: Enemy[] = [dummy, ...wolves];
   for (const enemy of enemies) {
-    for (const mesh of enemy.meshes) environment.addShadowCaster(mesh);
+    for (const mesh of enemy.meshes.filter(castsShadow)) {
+      environment.addShadowCaster(mesh);
+    }
   }
 
   /** The nearest living enemy within targeting range, if any. */
@@ -614,6 +642,8 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       actions,
       audio,
       environment,
+      assets,
+      renderPipeline,
       get progress() {
         return progress;
       },
@@ -651,6 +681,7 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       saveNow();
       input.dispose();
       audio.dispose();
+      renderPipeline.dispose();
       engine.stopRenderLoop();
       scene.dispose();
       engine.dispose();

@@ -14,3 +14,6 @@ next-env.d.ts
 .DS_Store
 Thumbs.db
 *.log
+
+# Raw downloaded art sources (see tools/fetch-assets.mjs)
+asset-sources/

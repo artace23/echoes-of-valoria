@@ -36,6 +36,24 @@ prototype; progress is saved locally. Milestones 2–5 below describe the earlie
 
 All eight prototype milestones are complete.
 
+## Visual quality upgrade
+Goal: a detailed, realistic dark-fantasy look in place of the primitive prototype.
+
+Phase 1 (forest), done so far:
+- GLB/glTF asset pipeline with a manifest, instancing, LOD, cull distance and collision
+  proxies, wired into the forest with placeholder fallbacks. See `ASSET_PIPELINE.md`.
+- Cinematic rendering: HDR, ACES tone mapping, bloom, MSAA + FXAA, vignette, and
+  two-cascade shadows with a stronger key light.
+- Procedural ground detail and grass, kept only as fallbacks when art is missing.
+
+- CC0 art sourced from Poly Haven and ambientCG and wired into the forest: scanned
+  rocks, ferns, a stump, logs and branches; scanned ground textures; a photographed
+  grass atlas; and conifers built from scanned bark and twig textures.
+
+Still to do for the forest: an HDR sky (and with it physically based materials), a
+dead tree, glowing mushrooms, and making the shadow pass cheaper. The village,
+characters and wolves are still primitives. See `ASSET_PIPELINE.md`.
+
 ## Milestone 0 — Repository inspection and plan
 Inspect existing files and tooling. Do not overwrite an existing project blindly.
 
