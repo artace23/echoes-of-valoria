@@ -2,47 +2,84 @@ import "@babylonjs/core/Collisions/collisionCoordinator";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
 import {
+  acceptQuest,
   addItem,
   countItem,
   createCharacterProgress,
   createInventory,
   createQuestProgress,
   deriveStats,
+  distributeSpawnPoints,
   equipWeapon,
+  findRegion,
+  getNpcDialogue,
   grantReward,
+  isInSafeZone,
   isWithinArc,
   recordEnemyDefeated,
   rollDrops,
+  turnInQuest,
   unequipWeapon,
   useConsumable,
   withEquipment,
   xpToNextLevel,
+  type CombatIntent,
+  type DialogueView,
   type Equipment,
+  type MoveIntent,
 } from "@valoria/game-core";
-import { CORRUPTED_WOLF, CULL_THE_PACK, getItem } from "@valoria/game-data";
-import type { ItemId } from "@valoria/game-types";
+import {
+  CORRUPTED_WOLF,
+  CULL_THE_PACK,
+  NPCS,
+  WORLD,
+  getItem,
+} from "@valoria/game-data";
+import type { ItemId, NpcDefinition } from "@valoria/game-types";
+import { AmbientAudio } from "../audio/AmbientAudio";
 import { ThirdPersonCamera } from "../camera/ThirdPersonCamera";
 import { TrainingDummy } from "../combat/TrainingDummy";
 import type { Enemy } from "../enemies/Enemy";
 import { WolfEnemy } from "../enemies/WolfEnemy";
 import { InputManager } from "../input/InputManager";
 import { PickupManager } from "../items/PickupManager";
+import { NpcManager } from "../npcs/NpcManager";
 import { PlayerController } from "../player/PlayerController";
-import { GameStore, type HudSnapshot } from "../state/GameStore";
+import {
+  GameStore,
+  type DialogueSnapshot,
+  type HudSnapshot,
+} from "../state/GameStore";
+import { TRAINING_YARD } from "../world/buildVillage";
 import { createEnvironment } from "../world/createEnvironment";
 
 /** Longest simulated step, so a stalled tab cannot tunnel through collisions. */
 const MAX_FRAME_SECONDS = 0.05;
 /** An enemy this close is shown as the current target in the HUD. */
 const TARGET_RANGE = 12;
-/** Wolves in the encounter clearing, and how far from its centre they live. */
-const WOLF_COUNT = 3;
-const WOLF_HOME_RADIUS = 5;
 /** Seconds a notice stays on screen. Queued notices show one after another. */
 const NOTICE_SECONDS = 3;
 /** A notice is cut short to this when others are waiting behind it. */
 const NOTICE_SECONDS_WHEN_QUEUED = 1.6;
+/**
+ * After a conversation ends, the interact key is ignored for this long, so
+ * the key press that closed it cannot immediately start it again.
+ */
+const INTERACT_LOCKOUT_SECONDS = 0.35;
 const POTION: ItemId = "health-potion";
+
+const IDLE_MOVE: MoveIntent = {
+  forward: 0,
+  right: 0,
+  sprint: false,
+  jump: false,
+};
+const IDLE_COMBAT: CombatIntent = {
+  light: false,
+  heavy: false,
+  dodge: false,
+  block: false,
+};
 
 /** Things the HUD can ask the game to do. */
 export interface GameActions {
@@ -51,6 +88,10 @@ export interface GameActions {
   /** Equip a weapon from the inventory. */
   equipItem(itemId: ItemId): void;
   unequipWeapon(): void;
+  /** Take the action the current conversation offers, if any. */
+  dialogueAction(): void;
+  closeDialogue(): void;
+  toggleSound(): void;
 }
 
 export interface GameHandle {
@@ -62,6 +103,15 @@ export interface GameHandle {
 
 const tenths = (seconds: number) => Math.ceil(seconds * 10) / 10;
 
+/** Small seeded generator, so spawn placement is the same on every load. */
+function seededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
+    return state / 4294967296;
+  };
+}
+
 /**
  * Creates the engine, scene and game systems on the given canvas and starts
  * the render loop. Call `dispose()` to stop and release everything.
@@ -72,6 +122,7 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
 
   const environment = createEnvironment(scene);
   const input = new InputManager(canvas);
+  const audio = new AmbientAudio();
   const player = new PlayerController(scene, {
     spawnPoint: environment.spawnPoint,
     worldHalfExtent: environment.worldHalfExtent,
@@ -80,7 +131,7 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
   const camera = new ThirdPersonCamera(scene, player.position);
 
   // Character state. Rules live in game-core; this module only holds the
-  // current values and applies their effects to the player.
+  // current values and applies their effects to the world.
   let progress = createCharacterProgress();
   let inventory = addItem(createInventory(), getItem(POTION), 2).inventory;
   let equipment: Equipment = { weapon: "rusty-sword" };
@@ -99,16 +150,6 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
     }
   };
 
-  /** Add XP and gold; levelling up raises stats and restores the Warrior. */
-  const receiveReward = (reward: { xp: number; gold: number }) => {
-    const result = grantReward(progress, reward);
-    progress = result.progress;
-    if (result.levelsGained > 0) {
-      refreshStats(true);
-      showNotice(`Level up! You are now level ${progress.level}`);
-    }
-  };
-
   /** Recompute stats from level and equipment and apply them to the player. */
   const refreshStats = (restore: boolean) => {
     player.applyStats(
@@ -120,18 +161,71 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
   };
   refreshStats(true);
 
+  /** Add XP and gold; levelling up raises stats and restores the Warrior. */
+  const receiveReward = (reward: { xp: number; gold: number }) => {
+    const result = grantReward(progress, reward);
+    progress = result.progress;
+    if (result.levelsGained > 0) {
+      refreshStats(true);
+      showNotice(`Level up! You are now level ${progress.level}`);
+    }
+  };
+
+  // --- Villagers and conversation -----------------------------------------
+  const npcs = new NpcManager(scene, NPCS);
+  for (const mesh of npcs.meshes) environment.addShadowCaster(mesh);
+
+  /** Show a quest marker over whoever the quest currently points to. */
+  const syncQuestMarkers = () => {
+    for (const npc of NPCS) {
+      if (npc.quest?.questId !== quest.questId) continue;
+      npcs.setMarker(
+        npc.id,
+        quest.status === "available"
+          ? "available"
+          : quest.status === "ready"
+            ? "ready"
+            : "none",
+      );
+    }
+  };
+  syncQuestMarkers();
+
+  let talkingTo: NpcDefinition | null = null;
+  let dialogue: DialogueSnapshot | null = null;
+  let interactLockout = 0;
+
+  const openDialogue = (npc: NpcDefinition) => {
+    const view: DialogueView = getNpcDialogue(npc, quest);
+    talkingTo = npc;
+    dialogue = {
+      npcName: npc.name,
+      npcTitle: npc.title,
+      lines: view.lines,
+      actionLabel: view.action?.label ?? null,
+    };
+    // Dialogue buttons need a free cursor.
+    if (input.pointerLocked) document.exitPointerLock();
+  };
+
+  const closeDialogue = () => {
+    talkingTo = null;
+    dialogue = null;
+    interactLockout = INTERACT_LOCKOUT_SECONDS;
+  };
+
   const pickups = new PickupManager(scene);
-  // Starting-area potion, and a better sword on the way to the wolves.
-  pickups.spawn(
-    getItem(POTION),
-    environment.spawnPoint.x + 3.5,
-    environment.spawnPoint.z,
-  );
-  pickups.spawn(
-    getItem("iron-sword"),
-    environment.spawnPoint.x,
-    (environment.spawnPoint.z + environment.encounterArea.z) / 2,
-  );
+  // A potion left out by the herbalist, and a better sword at the cart
+  // abandoned on the forest road.
+  pickups.spawn(getItem(POTION), -18.8, -47.4);
+  const cart = WORLD.markers.find((marker) => marker.id === "abandoned-cart");
+  if (cart) {
+    pickups.spawn(
+      getItem("iron-sword"),
+      cart.position.x - 1.8,
+      cart.position.z + 1.4,
+    );
+  }
 
   const actions: GameActions = {
     useItem(itemId) {
@@ -174,64 +268,84 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       refreshStats(false);
       showNotice("Weapon unequipped");
     },
+    dialogueAction() {
+      if (!talkingTo) return;
+      const action = getNpcDialogue(talkingTo, quest).action;
+      if (!action) return;
+      if (action.kind === "accept-quest") {
+        quest = acceptQuest(quest);
+        showNotice(`Quest accepted: ${CULL_THE_PACK.name}`);
+      } else {
+        const result = turnInQuest(quest, CULL_THE_PACK);
+        quest = result.progress;
+        if (result.reward) {
+          showNotice(
+            `Quest complete: ${CULL_THE_PACK.name}. +${result.reward.xp} XP, +${result.reward.gold} gold`,
+          );
+          receiveReward(result.reward);
+        }
+      }
+      syncQuestMarkers();
+      // Carry on the conversation with what the NPC says next.
+      openDialogue(talkingTo);
+    },
+    closeDialogue,
+    toggleSound() {
+      audio.unlock();
+      audio.setMuted(!audio.isMuted);
+    },
   };
 
-  // Practice target on the west side of the starting circle.
-  const dummy = new TrainingDummy(
-    scene,
-    environment.spawnPoint.x - 4.3,
-    environment.spawnPoint.z,
-  );
-  const wolves = Array.from({ length: WOLF_COUNT }, (_, index) => {
-    const angle = Math.PI / 2 + (index / WOLF_COUNT) * Math.PI * 2;
-    return new WolfEnemy(scene, {
-      definition: CORRUPTED_WOLF,
-      home: {
-        x: environment.encounterArea.x + Math.cos(angle) * WOLF_HOME_RADIUS,
-        z: environment.encounterArea.z + Math.sin(angle) * WOLF_HOME_RADIUS,
-      },
-      onDeath: (reward, wolf) => {
-        showNotice(`${wolf.name} slain: +${reward.xp} XP, +${reward.gold} gold`);
-        receiveReward(reward);
+  // --- Enemies ------------------------------------------------------------
+  const dummy = new TrainingDummy(scene, TRAINING_YARD.x, TRAINING_YARD.z);
 
-        const update = recordEnemyDefeated(
-          quest,
-          CULL_THE_PACK,
-          CORRUPTED_WOLF.id,
-        );
-        quest = update.progress;
-        if (update.justCompleted) {
-          const questReward = CULL_THE_PACK.reward;
-          showNotice(
-            `Quest complete: ${CULL_THE_PACK.name}. +${questReward.xp} XP, +${questReward.gold} gold`,
-          );
-          receiveReward(questReward);
-        }
+  const onWolfDeath = (
+    reward: { xp: number; gold: number },
+    wolf: WolfEnemy,
+  ) => {
+    showNotice(`${wolf.name} slain: +${reward.xp} XP, +${reward.gold} gold`);
+    receiveReward(reward);
 
-        // Item drops land where the wolf fell, slightly spread out.
-        const drops = rollDrops(CORRUPTED_WOLF.drops, Math.random);
-        drops.forEach((itemId, dropIndex) => {
-          pickups.spawn(
-            getItem(itemId),
-            wolf.position.x + dropIndex * 0.6,
-            wolf.position.z,
-          );
-        });
-      },
+    const update = recordEnemyDefeated(quest, CULL_THE_PACK, CORRUPTED_WOLF.id);
+    quest = update.progress;
+    if (update.objectiveMet) {
+      const giver = NPCS.find(
+        (npc) => npc.quest?.questId === CULL_THE_PACK.id,
+      );
+      showNotice(
+        `Objective complete: return to ${giver?.name ?? "the village"}`,
+      );
+      syncQuestMarkers();
+    }
+
+    // Item drops land where the wolf fell, slightly spread out.
+    const drops = rollDrops(CORRUPTED_WOLF.drops, Math.random);
+    drops.forEach((itemId, dropIndex) => {
+      pickups.spawn(
+        getItem(itemId),
+        wolf.position.x + dropIndex * 0.6,
+        wolf.position.z,
+      );
     });
-  });
+  };
+
+  // Each spawn zone is home to its own pack.
+  const spawnRandom = seededRandom(4242);
+  const wolves = WORLD.spawnZones.flatMap((zone) =>
+    distributeSpawnPoints(zone, spawnRandom).map(
+      (home) =>
+        new WolfEnemy(scene, {
+          definition: CORRUPTED_WOLF,
+          home,
+          onDeath: onWolfDeath,
+        }),
+    ),
+  );
+
   const enemies: Enemy[] = [dummy, ...wolves];
   for (const enemy of enemies) {
     for (const mesh of enemy.meshes) environment.addShadowCaster(mesh);
   }
-
-  const distanceToPlayer = (enemy: Enemy) => {
-    const position = enemy.position;
-    return Math.hypot(
-      position.x - player.position.x,
-      position.z - player.position.z,
-    );
-  };
 
   /** The nearest living enemy within targeting range, if any. */
   const findTarget = (): Enemy | null => {
@@ -239,7 +353,11 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
     let bestDistance = TARGET_RANGE;
     for (const enemy of enemies) {
       if (!enemy.alive) continue;
-      const distance = distanceToPlayer(enemy);
+      const position = enemy.position;
+      const distance = Math.hypot(
+        position.x - player.position.x,
+        position.z - player.position.z,
+      );
       if (distance <= bestDistance) {
         best = enemy;
         bestDistance = distance;
@@ -261,6 +379,10 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
 
   const readSnapshot = (): HudSnapshot => {
     const target = findTarget();
+    const region = findRegion(WORLD.regions, player.position);
+    const nearby =
+      talkingTo || player.dead ? null : npcs.nearest(player.position);
+    const facing = player.facing;
     return {
       health: player.health,
       healthMax: player.healthMax,
@@ -282,8 +404,18 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       inventory,
       weaponId: equipment.weapon,
       potionCount: countItem(inventory, POTION),
+      questStatus: quest.status,
       questCount: quest.count,
-      questCompleted: quest.status === "completed",
+      locationName: region?.name ?? WORLD.wildernessName,
+      inSafeZone: player.sheltered,
+      interactPrompt: nearby ? `Talk to ${nearby.name}` : null,
+      dialogue,
+      // Coarse on purpose: the map does not need more, and finer values
+      // would re-render the HUD on every step.
+      playerX: Math.round(player.position.x),
+      playerZ: Math.round(player.position.z),
+      playerHeading: Math.round(Math.atan2(facing.x, facing.z) * 8) / 8,
+      soundOn: !audio.isMuted,
       notice,
       targetName: target?.name ?? null,
       targetHealth: target?.health ?? 0,
@@ -296,14 +428,30 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
   scene.onBeforeRenderObservable.add(() => {
     const dt = Math.min(engine.getDeltaTime() / 1000, MAX_FRAME_SECONDS);
 
-    if (input.consumeUsePotion()) actions.useItem(POTION);
+    player.sheltered = isInSafeZone(WORLD.regions, player.position);
 
-    const strike = player.update(
-      input.readIntent(),
-      input.readCombatIntent(),
-      camera.forward,
-      dt,
-    );
+    // Read input every frame so presses made during a conversation are
+    // consumed rather than acted on when it ends.
+    const wantsInteract = input.consumeInteract();
+    const wantsPotion = input.consumeUsePotion();
+    let moveIntent = input.readIntent();
+    let combatIntent = input.readCombatIntent();
+
+    if (talkingTo) {
+      // The Warrior stands still while talking.
+      moveIntent = IDLE_MOVE;
+      combatIntent = IDLE_COMBAT;
+      if (player.dead) closeDialogue();
+    } else if (!player.dead) {
+      interactLockout = Math.max(0, interactLockout - dt);
+      if (wantsInteract && interactLockout === 0) {
+        const npc = npcs.nearest(player.position);
+        if (npc) openDialogue(npc);
+      }
+      if (wantsPotion) actions.useItem(POTION);
+    }
+
+    const strike = player.update(moveIntent, combatIntent, camera.forward, dt);
     // A swing hits every living enemy inside its arc.
     if (strike) {
       for (const enemy of enemies) {
@@ -323,6 +471,7 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       }
     }
     for (const enemy of enemies) enemy.update(dt, player);
+    npcs.update(dt, player.position);
     pickups.update(dt, player.position, collect);
 
     if (notice !== null) {
@@ -336,8 +485,19 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
     }
 
     camera.update(player.position, input.consumeLook(), dt);
+    const wild = environment.update(player.position);
+    audio.update(dt, wild);
     store.update(readSnapshot());
   });
+
+  // Browsers only start audio from a user gesture.
+  const unlockAudio = () => {
+    audio.unlock();
+    window.removeEventListener("pointerdown", unlockAudio);
+    window.removeEventListener("keydown", unlockAudio);
+  };
+  window.addEventListener("pointerdown", unlockAudio);
+  window.addEventListener("keydown", unlockAudio);
 
   if (process.env.NODE_ENV !== "production") {
     // Development-only handle for inspecting the running game from the console.
@@ -347,8 +507,11 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       camera,
       dummy,
       wolves,
+      npcs,
       pickups,
       actions,
+      audio,
+      environment,
       get progress() {
         return progress;
       },
@@ -360,6 +523,9 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       },
       get quest() {
         return quest;
+      },
+      get dialogue() {
+        return dialogue;
       },
     };
   }
@@ -373,7 +539,10 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
     actions,
     dispose() {
       window.removeEventListener("resize", onResize);
+      window.removeEventListener("pointerdown", unlockAudio);
+      window.removeEventListener("keydown", unlockAudio);
       input.dispose();
+      audio.dispose();
       engine.stopRenderLoop();
       scene.dispose();
       engine.dispose();

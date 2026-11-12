@@ -2,10 +2,12 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { DEFAULT_COMBAT_CONFIG } from "@valoria/game-core";
-import { CULL_THE_PACK } from "@valoria/game-data";
+import { CULL_THE_PACK, NPCS } from "@valoria/game-data";
 import type { GameActions } from "@/game/engine/createGame";
 import type { GameStore } from "@/game/state/GameStore";
+import { DialoguePanel } from "./DialoguePanel";
 import { InventoryPanel } from "./InventoryPanel";
+import { WorldMap } from "./WorldMap";
 
 function Bar({
   label,
@@ -87,7 +89,15 @@ const CONTROLS: [string, string][] = [
   ["Shift", "Sprint"],
   ["Space", "Jump"],
   ["Scroll", "Zoom"],
+  ["T", "Talk"],
 ];
+
+const QUEST_GIVER =
+  NPCS.find((npc) => npc.quest?.questId === CULL_THE_PACK.id)?.name ??
+  "the village";
+
+const topButtonClass =
+  "pointer-events-auto border border-gold-muted/50 bg-surface/80 px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-gold transition-colors hover:bg-gold hover:text-void";
 
 export function GameHud({
   store,
@@ -103,6 +113,7 @@ export function GameHud({
   );
   const combat = DEFAULT_COMBAT_CONFIG;
   const [inventoryOpen, setInventoryOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -111,8 +122,12 @@ export function GameHud({
         // The panel needs a free cursor, so give the mouse back first.
         if (document.pointerLockElement) document.exitPointerLock();
         setInventoryOpen((open) => !open);
+      } else if (event.code === "KeyM") {
+        if (document.pointerLockElement) document.exitPointerLock();
+        setMapOpen((open) => !open);
       } else if (event.code === "Escape") {
         setInventoryOpen(false);
+        setMapOpen(false);
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -172,6 +187,14 @@ export function GameHud({
             ? "Move mouse to look around | WASD to move | Esc to release"
             : "Drag to look around | WASD to move"}
         </p>
+        <p className="text-center font-display text-sm tracking-[0.2em] text-ink">
+          {hud.locationName}
+          {hud.inSafeZone && (
+            <span className="ml-2 font-sans text-[11px] uppercase tracking-[0.2em] text-gold">
+              Safe zone
+            </span>
+          )}
+        </p>
         {hud.targetName && (
           <div className="w-64 border border-blood/50 bg-surface/80 p-2">
             <Bar
@@ -192,14 +215,32 @@ export function GameHud({
         )}
       </div>
 
-      <button
-        type="button"
-        onClick={() => setInventoryOpen((open) => !open)}
-        aria-expanded={inventoryOpen}
-        className="pointer-events-auto absolute right-4 top-4 border border-gold-muted/50 bg-surface/80 px-3 py-1.5 text-xs uppercase tracking-[0.2em] text-gold transition-colors hover:bg-gold hover:text-void"
-      >
-        Inventory <span className="text-ink-muted">(I)</span>
-      </button>
+      <div className="absolute right-4 top-4 flex gap-2">
+        <button
+          type="button"
+          onClick={actions.toggleSound}
+          aria-pressed={hud.soundOn}
+          className={topButtonClass}
+        >
+          Sound <span className="text-ink-muted">{hud.soundOn ? "on" : "off"}</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setMapOpen((open) => !open)}
+          aria-expanded={mapOpen}
+          className={topButtonClass}
+        >
+          Map <span className="text-ink-muted">(M)</span>
+        </button>
+        <button
+          type="button"
+          onClick={() => setInventoryOpen((open) => !open)}
+          aria-expanded={inventoryOpen}
+          className={topButtonClass}
+        >
+          Inventory <span className="text-ink-muted">(I)</span>
+        </button>
+      </div>
       {!inventoryOpen && (
         <section
           aria-label="Quest"
@@ -207,7 +248,12 @@ export function GameHud({
         >
           <p className="flex items-baseline justify-between text-[11px] uppercase tracking-[0.2em] text-ink-muted">
             <span>Quest</span>
-            {hud.questCompleted && <span className="text-gold">Completed</span>}
+            {hud.questStatus === "completed" && (
+              <span className="text-gold">Completed</span>
+            )}
+            {hud.questStatus === "available" && (
+              <span className="text-gold">Available</span>
+            )}
           </p>
           <h2 className="mt-1 font-display text-sm tracking-wide text-gold">
             {CULL_THE_PACK.name}
@@ -215,16 +261,27 @@ export function GameHud({
           <p className="mt-1 text-xs text-ink-muted">
             {CULL_THE_PACK.description}
           </p>
-          <div className="mt-2">
-            <Bar
-              label="Wolves defeated"
-              value={hud.questCount}
-              max={CULL_THE_PACK.objective.count}
-              fillClass="bg-gold"
-            />
-          </div>
+          {hud.questStatus === "available" ? (
+            <p className="mt-2 text-xs text-ink">
+              Speak with {QUEST_GIVER} in Ashen Village.
+            </p>
+          ) : (
+            <div className="mt-2">
+              <Bar
+                label="Wolves defeated"
+                value={hud.questCount}
+                max={CULL_THE_PACK.objective.count}
+                fillClass="bg-gold"
+              />
+            </div>
+          )}
+          {hud.questStatus === "ready" && (
+            <p className="mt-2 text-xs text-gold">
+              Return to {QUEST_GIVER} to claim your reward.
+            </p>
+          )}
           <p className="mt-2 text-xs text-ink-muted">
-            {hud.questCompleted ? "Reward received" : "Reward"}:{" "}
+            {hud.questStatus === "completed" ? "Reward received" : "Reward"}:{" "}
             <span className="text-ink">{CULL_THE_PACK.reward.xp} XP</span>,{" "}
             <span className="text-gold">{CULL_THE_PACK.reward.gold} gold</span>
           </p>
@@ -239,18 +296,42 @@ export function GameHud({
         />
       )}
 
+      {mapOpen && (
+        <WorldMap
+          playerX={hud.playerX}
+          playerZ={hud.playerZ}
+          playerHeading={hud.playerHeading}
+          locationName={hud.locationName}
+          onClose={() => setMapOpen(false)}
+        />
+      )}
+
+      {hud.dialogue && (
+        <DialoguePanel
+          key={`${hud.dialogue.npcName}:${hud.dialogue.lines[0]}`}
+          dialogue={hud.dialogue}
+          actions={actions}
+        />
+      )}
+
       {hud.dead && (
         <div className="absolute inset-0 flex flex-col items-center justify-center bg-void/60">
           <p className="font-display text-3xl tracking-[0.3em] text-blood">
             You have fallen
           </p>
           <p className="mt-3 text-sm text-ink-muted">
-            Returning to the starting circle in {hud.respawnIn}…
+            Returning to Ashen Village in {hud.respawnIn}…
           </p>
         </div>
       )}
 
       <div className="absolute bottom-4 left-1/2 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col items-center gap-2">
+        {hud.interactPrompt && (
+          <p className="border border-gold/60 bg-surface/90 px-4 py-1.5 text-sm text-ink">
+            <span className="mr-2 font-display text-gold">T</span>
+            {hud.interactPrompt}
+          </p>
+        )}
         <ul className="flex gap-2">
           <Skill
             hotkey="F"

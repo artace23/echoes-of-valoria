@@ -1,88 +1,89 @@
 import "@babylonjs/core/Lights/Shadows/shadowGeneratorSceneComponent";
-import "@babylonjs/core/Meshes/instancedMesh";
 import { DirectionalLight } from "@babylonjs/core/Lights/directionalLight";
 import { HemisphericLight } from "@babylonjs/core/Lights/hemisphericLight";
 import { PointLight } from "@babylonjs/core/Lights/pointLight";
 import { ShadowGenerator } from "@babylonjs/core/Lights/Shadows/shadowGenerator";
-import { StandardMaterial } from "@babylonjs/core/Materials/standardMaterial";
 import { Color3, Color4 } from "@babylonjs/core/Maths/math.color";
 import { Vector3 } from "@babylonjs/core/Maths/math.vector";
-import { CreateBox } from "@babylonjs/core/Meshes/Builders/boxBuilder";
-import { CreateCylinder } from "@babylonjs/core/Meshes/Builders/cylinderBuilder";
 import { CreateGround } from "@babylonjs/core/Meshes/Builders/groundBuilder";
-import { CreateIcoSphere } from "@babylonjs/core/Meshes/Builders/icoSphereBuilder";
 import type { AbstractMesh } from "@babylonjs/core/Meshes/abstractMesh";
 import { Scene } from "@babylonjs/core/scene";
+import { WORLD } from "@valoria/game-data";
+import { buildForest } from "./buildForest";
+import { buildVillage } from "./buildVillage";
+import { WorldKit } from "./WorldKit";
 
-const WORLD_SIZE = 80;
-const START = { x: 0, z: -24, radius: 6 };
-const ENCOUNTER = { x: 0, z: 18, radius: 11 };
-const PATH_HALF_WIDTH = 2.5;
+/** Half-size of the square the shadow map covers, centred on the player. */
+const SHADOW_RANGE = 36;
+/** The shadow area moves in steps, which keeps shadow edges from crawling. */
+const SHADOW_SNAP = 4;
+const MOON_DISTANCE = 90;
+/** Scenery this far outside the shadow area can still cast into it. */
+const SHADOW_CASTER_MARGIN = 8;
+
+/** How the air looks in each kind of place. Blended by distance from the village. */
+const VILLAGE_AIR = {
+  fog: new Color3(0.075, 0.066, 0.07),
+  density: 0.011,
+  ambient: 0.68,
+};
+const FOREST_AIR = {
+  fog: new Color3(0.035, 0.055, 0.07),
+  density: 0.027,
+  ambient: 0.46,
+};
 
 export interface Environment {
   /** Where the player starts and respawns. */
   spawnPoint: Vector3;
   /** Half-size of the square play area the player may walk in. */
   worldHalfExtent: number;
-  /** Centre and radius of the enemy encounter clearing. */
-  encounterArea: { x: number; z: number; radius: number };
+  /** Number of scenery props placed, for diagnostics. */
+  propCount: number;
   addShadowCaster(mesh: AbstractMesh): void;
-}
-
-/** Deterministic PRNG so the test area looks the same on every load. */
-function mulberry32(seed: number): () => number {
-  let a = seed;
-  return () => {
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function matte(scene: Scene, name: string, color: Color3): StandardMaterial {
-  const material = new StandardMaterial(name, scene);
-  material.diffuseColor = color;
-  material.specularColor = Color3.Black();
-  return material;
-}
-
-/** True where scenery must stay clear: both clearings and the path between. */
-function isReserved(x: number, z: number, margin: number): boolean {
-  const inStart = Math.hypot(x - START.x, z - START.z) < START.radius + margin;
-  const inEncounter =
-    Math.hypot(x - ENCOUNTER.x, z - ENCOUNTER.z) < ENCOUNTER.radius + margin;
-  const onPath =
-    Math.abs(x) < PATH_HALF_WIDTH + margin && z > START.z && z < ENCOUNTER.z;
-  return inStart || inEncounter || onPath;
+  /**
+   * Per-frame update: keeps shadows around the player and blends fog and
+   * ambient light between the village and the forest. Returns how deep into
+   * the forest the player is, from 0 (village) to 1.
+   */
+  update(playerPosition: Vector3): number;
 }
 
 /**
- * Small primitive-geometry test area: flat ground, a starting circle, a path
- * to an encounter clearing, trees, rocks, moonlight with shadows, and fog.
+ * Builds the world: ground, Ashen Village, the Whispering Forest, lighting,
+ * shadows and fog. All scenery is primitive geometry.
  */
 export function createEnvironment(scene: Scene): Environment {
-  const sky = new Color3(0.05, 0.06, 0.09);
-  scene.clearColor = new Color4(sky.r, sky.g, sky.b, 1);
   scene.ambientColor = new Color3(0.1, 0.1, 0.12);
   scene.fogMode = Scene.FOGMODE_EXP2;
-  scene.fogColor = sky;
-  scene.fogDensity = 0.022;
+  scene.fogColor = VILLAGE_AIR.fog.clone();
+  scene.fogDensity = VILLAGE_AIR.density;
+  scene.clearColor = new Color4(0, 0, 0, 1);
   scene.collisionsEnabled = true;
+  // Nothing in the world is picked with the pointer.
+  scene.skipPointerMovePicking = true;
 
+  // Four lights in total: StandardMaterial's per-mesh limit. Lanterns and
+  // windows are self-lit materials instead of extra lights.
   const ambient = new HemisphericLight("ambient", new Vector3(0, 1, 0), scene);
-  ambient.intensity = 0.55;
+  ambient.intensity = VILLAGE_AIR.ambient;
   ambient.diffuse = new Color3(0.55, 0.62, 0.8);
   ambient.groundColor = new Color3(0.12, 0.1, 0.1);
 
-  const moon = new DirectionalLight(
-    "moon",
-    new Vector3(-0.45, -1, 0.35).normalize(),
-    scene,
-  );
-  moon.position = new Vector3(30, 60, -25);
-  moon.intensity = 1.25;
+  const moonDirection = new Vector3(-0.45, -1, 0.35).normalize();
+  const moon = new DirectionalLight("moon", moonDirection, scene);
+  moon.intensity = 1.2;
   moon.diffuse = new Color3(0.78, 0.84, 1);
+  // A fixed-size shadow area that follows the player, instead of one
+  // stretched over the whole map.
+  moon.autoUpdateExtends = false;
+  moon.autoCalcShadowZBounds = false;
+  moon.orthoLeft = -SHADOW_RANGE;
+  moon.orthoRight = SHADOW_RANGE;
+  moon.orthoBottom = -SHADOW_RANGE;
+  moon.orthoTop = SHADOW_RANGE;
+  moon.shadowMinZ = 1;
+  moon.shadowMaxZ = MOON_DISTANCE * 2;
 
   const shadows = new ShadowGenerator(2048, moon);
   shadows.usePercentageCloserFiltering = true;
@@ -90,178 +91,110 @@ export function createEnvironment(scene: Scene): Environment {
   shadows.normalBias = 0.02;
   shadows.setDarkness(0.35);
 
-  const random = mulberry32(1337);
-  const range = (min: number, max: number) => min + random() * (max - min);
+  const { village, northGate } = WORLD;
+  const squareLight = new PointLight(
+    "village-square-light",
+    new Vector3(village.center.x, 4, village.center.z),
+    scene,
+  );
+  squareLight.diffuse = new Color3(1, 0.72, 0.4);
+  squareLight.intensity = 1.1;
+  squareLight.range = 30;
 
-  // Ground
+  const gateLight = new PointLight(
+    "gate-light",
+    new Vector3(northGate.x, 3.6, northGate.z + 1),
+    scene,
+  );
+  gateLight.diffuse = new Color3(1, 0.7, 0.38);
+  gateLight.intensity = 0.8;
+  gateLight.range = 16;
+
+  const kit = new WorldKit(scene);
+
+  const groundSize = (WORLD.halfExtent + 12) * 2;
   const ground = CreateGround(
     "ground",
-    { width: WORLD_SIZE, height: WORLD_SIZE },
+    { width: groundSize, height: groundSize },
     scene,
   );
-  ground.material = matte(scene, "ground-earth", new Color3(0.16, 0.19, 0.14));
+  ground.material = kit.material("earth");
   ground.checkCollisions = true;
   ground.receiveShadows = true;
+  ground.isPickable = false;
+  ground.freezeWorldMatrix();
 
-  // Flat markers sit just above the ground and are not collidable.
-  const stone = matte(scene, "stone", new Color3(0.36, 0.36, 0.38));
-  const startDisc = CreateCylinder(
-    "start-disc",
-    { diameter: START.radius * 2, height: 0.04, tessellation: 48 },
-    scene,
-  );
-  startDisc.position.set(START.x, 0.02, START.z);
-  startDisc.material = stone;
-  startDisc.receiveShadows = true;
+  buildVillage(kit);
+  buildForest(kit);
 
-  const path = CreateBox(
-    "path",
-    {
-      width: PATH_HALF_WIDTH * 1.4,
-      height: 0.02,
-      depth: ENCOUNTER.z - ENCOUNTER.radius - (START.z + START.radius),
-    },
-    scene,
-  );
-  path.position.set(
-    0,
-    0.01,
-    (START.z + START.radius + ENCOUNTER.z - ENCOUNTER.radius) / 2,
-  );
-  path.material = matte(scene, "path-dirt", new Color3(0.24, 0.2, 0.15));
-  path.receiveShadows = true;
+  // Only scenery near the player is drawn into the shadow map. The list is
+  // rebuilt when the shadow area steps to a new position, not every frame.
+  const shadowMap = shadows.getShadowMap();
+  const dynamicCasters: AbstractMesh[] = [];
+  let castersAtX = Number.NaN;
+  let castersAtZ = Number.NaN;
+  const refreshCasters = (centerX: number, centerZ: number) => {
+    if (!shadowMap) return;
+    const reach = SHADOW_RANGE + SHADOW_CASTER_MARGIN;
+    shadowMap.renderList = [
+      ...dynamicCasters,
+      ...kit.shadowCasters.filter(
+        (mesh) =>
+          Math.abs(mesh.position.x - centerX) <= reach &&
+          Math.abs(mesh.position.z - centerZ) <= reach,
+      ),
+    ];
+    castersAtX = centerX;
+    castersAtZ = centerZ;
+  };
 
-  const encounterDisc = CreateCylinder(
-    "encounter-disc",
-    { diameter: ENCOUNTER.radius * 2, height: 0.04, tessellation: 64 },
-    scene,
-  );
-  encounterDisc.position.set(ENCOUNTER.x, 0.02, ENCOUNTER.z);
-  encounterDisc.material = matte(
-    scene,
-    "encounter-earth",
-    new Color3(0.26, 0.13, 0.13),
-  );
-  encounterDisc.receiveShadows = true;
-
-  // Starting area: four pillars and a warm light.
-  for (let i = 0; i < 4; i++) {
-    const angle = Math.PI / 4 + (i * Math.PI) / 2;
-    const pillar = CreateCylinder(
-      `start-pillar-${i}`,
-      { diameter: 0.8, height: 3.2, tessellation: 12 },
-      scene,
-    );
-    pillar.position.set(
-      START.x + Math.cos(angle) * (START.radius - 0.8),
-      1.6,
-      START.z + Math.sin(angle) * (START.radius - 0.8),
-    );
-    pillar.material = stone;
-    pillar.checkCollisions = true;
-    pillar.receiveShadows = true;
-    shadows.addShadowCaster(pillar);
-  }
-  const torch = new PointLight(
-    "start-torch",
-    new Vector3(START.x, 3, START.z),
-    scene,
-  );
-  torch.diffuse = new Color3(1, 0.72, 0.4);
-  torch.intensity = 0.9;
-  torch.range = 16;
-
-  // Encounter area: a ring of standing stones with a gap facing the path.
-  const darkStone = matte(scene, "dark-stone", new Color3(0.2, 0.19, 0.22));
-  const stoneCount = 9;
-  for (let i = 0; i < stoneCount; i++) {
-    const angle = -Math.PI / 2 + ((i + 0.5) / stoneCount) * Math.PI * 2;
-    if (Math.abs(Math.cos(angle)) < 0.4 && Math.sin(angle) < 0) continue;
-    const height = range(2.4, 4);
-    const monolith = CreateBox(
-      `standing-stone-${i}`,
-      { width: 1.3, height, depth: 0.8 },
-      scene,
-    );
-    monolith.position.set(
-      ENCOUNTER.x + Math.cos(angle) * ENCOUNTER.radius,
-      height / 2,
-      ENCOUNTER.z + Math.sin(angle) * ENCOUNTER.radius,
-    );
-    monolith.rotation.y = -angle + Math.PI / 2 + range(-0.2, 0.2);
-    monolith.material = darkStone;
-    monolith.checkCollisions = true;
-    monolith.receiveShadows = true;
-    shadows.addShadowCaster(monolith);
-  }
-
-  // Trees: trunk (collidable) + cone canopy, instanced from hidden templates.
-  const trunkTemplate = CreateCylinder(
-    "tree-trunk",
-    { diameterTop: 0.35, diameterBottom: 0.6, height: 3, tessellation: 8 },
-    scene,
-  );
-  trunkTemplate.material = matte(scene, "bark", new Color3(0.2, 0.14, 0.1));
-  trunkTemplate.isVisible = false;
-
-  const canopyTemplate = CreateCylinder(
-    "tree-canopy",
-    { diameterTop: 0, diameterBottom: 3.4, height: 5, tessellation: 8 },
-    scene,
-  );
-  canopyTemplate.material = matte(scene, "pine", new Color3(0.1, 0.2, 0.14));
-  canopyTemplate.isVisible = false;
-
-  const scatterLimit = WORLD_SIZE / 2 - 2;
-  let treeCount = 0;
-  for (let attempt = 0; attempt < 400 && treeCount < 70; attempt++) {
-    const x = range(-scatterLimit, scatterLimit);
-    const z = range(-scatterLimit, scatterLimit);
-    if (isReserved(x, z, 1.5)) continue;
-    const scale = range(0.8, 1.5);
-    const index = treeCount++;
-
-    const trunk = trunkTemplate.createInstance(`tree-trunk-${index}`);
-    trunk.position.set(x, 1.5 * scale, z);
-    trunk.scaling.setAll(scale);
-    trunk.checkCollisions = true;
-    shadows.addShadowCaster(trunk);
-
-    const canopy = canopyTemplate.createInstance(`tree-canopy-${index}`);
-    canopy.position.set(x, (2.4 + 2.5) * scale, z);
-    canopy.scaling.setAll(scale);
-    canopy.rotation.y = range(0, Math.PI);
-    shadows.addShadowCaster(canopy);
-  }
-
-  // Rocks
-  const rockTemplate = CreateIcoSphere(
-    "rock",
-    { radius: 1, subdivisions: 1, flat: true },
-    scene,
-  );
-  rockTemplate.material = matte(scene, "rock", new Color3(0.3, 0.3, 0.33));
-  rockTemplate.isVisible = false;
-
-  let rockCount = 0;
-  for (let attempt = 0; attempt < 200 && rockCount < 26; attempt++) {
-    const x = range(-scatterLimit, scatterLimit);
-    const z = range(-scatterLimit, scatterLimit);
-    if (isReserved(x, z, 0.5)) continue;
-    const size = range(0.5, 1.6);
-    const rock = rockTemplate.createInstance(`rock-${rockCount++}`);
-    rock.position.set(x, size * 0.35, z);
-    rock.scaling.set(size * range(0.8, 1.3), size * 0.7, size * range(0.8, 1.3));
-    rock.rotation.y = range(0, Math.PI * 2);
-    rock.checkCollisions = true;
-    rock.receiveShadows = true;
-    shadows.addShadowCaster(rock);
-  }
+  const fadeStart = WORLD.villageWallRadius - 4;
+  const fadeEnd = WORLD.villageWallRadius + 16;
 
   return {
-    spawnPoint: new Vector3(START.x, 1.5, START.z),
-    worldHalfExtent: WORLD_SIZE / 2 - 1,
-    encounterArea: { ...ENCOUNTER },
-    addShadowCaster: (mesh) => shadows.addShadowCaster(mesh),
+    spawnPoint: new Vector3(WORLD.spawnPoint.x, 1.5, WORLD.spawnPoint.z),
+    worldHalfExtent: WORLD.halfExtent - 1,
+    propCount: kit.placed,
+    addShadowCaster: (mesh) => {
+      // Moving things (the player, enemies, villagers) always cast.
+      dynamicCasters.push(mesh);
+      castersAtX = Number.NaN;
+    },
+    update(playerPosition) {
+      const snappedX = Math.round(playerPosition.x / SHADOW_SNAP) * SHADOW_SNAP;
+      const snappedZ = Math.round(playerPosition.z / SHADOW_SNAP) * SHADOW_SNAP;
+      moon.position.set(
+        snappedX - moonDirection.x * MOON_DISTANCE,
+        -moonDirection.y * MOON_DISTANCE,
+        snappedZ - moonDirection.z * MOON_DISTANCE,
+      );
+
+      if (snappedX !== castersAtX || snappedZ !== castersAtZ) {
+        refreshCasters(snappedX, snappedZ);
+      }
+
+      const fromVillage = Math.hypot(
+        playerPosition.x - village.center.x,
+        playerPosition.z - village.center.z,
+      );
+      const t = Math.min(
+        1,
+        Math.max(0, (fromVillage - fadeStart) / (fadeEnd - fadeStart)),
+      );
+      const wild = t * t * (3 - 2 * t);
+
+      Color3.LerpToRef(VILLAGE_AIR.fog, FOREST_AIR.fog, wild, scene.fogColor);
+      scene.clearColor.set(
+        scene.fogColor.r,
+        scene.fogColor.g,
+        scene.fogColor.b,
+        1,
+      );
+      scene.fogDensity =
+        VILLAGE_AIR.density + (FOREST_AIR.density - VILLAGE_AIR.density) * wild;
+      ambient.intensity =
+        VILLAGE_AIR.ambient + (FOREST_AIR.ambient - VILLAGE_AIR.ambient) * wild;
+      return wild;
+    },
   };
 }

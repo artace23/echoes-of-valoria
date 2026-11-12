@@ -26,7 +26,11 @@ prototype; progress is saved locally. Milestones 2–5 below describe the earlie
    inventory, health potions, and an equippable weapon that changes attack power.
 6. **Done** — Quest: "Cull the Pack", defeat three corrupted wolves, tracked in the HUD,
    with XP and gold granted once on completion.
-7. Local save/load and the remaining HUD (enemy health, cooldowns, inventory, quest).
+7. **Done** — World and environment: Ashen Village (houses, roads, props, lighting, safe
+   zone), a reusable NPC system with dialogue, the quest accepted from and turned in to
+   the village elder, an expanded Whispering Forest with three wolf spawn zones, a world
+   map with markers, location-based fog and lighting, and procedural ambient sound.
+8. Local save/load of level, XP, gold, inventory, equipment and quest progress.
 
 ## Milestone 0 — Repository inspection and plan
 Inspect existing files and tooling. Do not overwrite an existing project blindly.

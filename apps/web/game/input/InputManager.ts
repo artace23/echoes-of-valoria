@@ -4,11 +4,13 @@ const MOVE_KEYS = ["KeyW", "KeyA", "KeyS", "KeyD"];
 const LOOK_KEYS = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
 const COMBAT_KEYS = ["KeyF", "KeyR", "KeyQ", "KeyE"];
 const ITEM_KEYS = ["KeyH"];
+const INTERACT_KEYS = ["KeyT"];
 const GAME_KEYS = new Set([
   ...MOVE_KEYS,
   ...LOOK_KEYS,
   ...COMBAT_KEYS,
   ...ITEM_KEYS,
+  ...INTERACT_KEYS,
   "ShiftLeft",
   "ShiftRight",
   "Space",
@@ -41,13 +43,14 @@ export interface LookDelta {
  *
  * Combat: F attack, R heavy attack, Q block (hold), E dodge. While the
  * pointer is locked, left click also attacks and right click blocks.
- * H drinks a health potion.
+ * H drinks a health potion. T talks to a nearby villager.
  */
 export class InputManager {
   private readonly held = new Set<string>();
   private jumpQueued = false;
   private dodgeQueued = false;
   private potionQueued = false;
+  private interactQueued = false;
   private readonly lockedButtons = new Set<number>();
   private lookX = 0;
   private lookY = 0;
@@ -99,6 +102,13 @@ export class InputManager {
       dodge,
       block: this.held.has("KeyQ") || this.lockedButtons.has(2),
     };
+  }
+
+  /** True once per press of the interact key. */
+  consumeInteract(): boolean {
+    const queued = this.interactQueued;
+    this.interactQueued = false;
+    return queued;
   }
 
   /** True once per press of the quick-potion key. */
@@ -155,6 +165,7 @@ export class InputManager {
     if (event.code === "Space" && !event.repeat) this.jumpQueued = true;
     if (event.code === "KeyE" && !event.repeat) this.dodgeQueued = true;
     if (event.code === "KeyH" && !event.repeat) this.potionQueued = true;
+    if (event.code === "KeyT" && !event.repeat) this.interactQueued = true;
     this.held.add(event.code);
   };
 
@@ -167,6 +178,7 @@ export class InputManager {
     this.jumpQueued = false;
     this.dodgeQueued = false;
     this.potionQueued = false;
+    this.interactQueued = false;
     this.lockedButtons.clear();
     this.dragPointerId = null;
   };

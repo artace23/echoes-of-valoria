@@ -5,6 +5,8 @@ import type { DamageOutcome, PlanarVector } from "@valoria/game-core";
 export interface Opponent {
   readonly position: { x: number; z: number };
   readonly dead: boolean;
+  /** True inside a safe zone: enemies must not pursue or attack. */
+  readonly sheltered: boolean;
   receiveAttack(damage: number, attacker: PlanarVector): DamageOutcome;
 }
 

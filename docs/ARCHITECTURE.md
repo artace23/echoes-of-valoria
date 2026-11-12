@@ -12,13 +12,20 @@ physics engine is installed.
 
 - `packages/game-core`: rules as pure functions (e.g. `movement.ts`: walking, sprint and
   stamina, jump, gravity; `combat.ts`: attack timing, dodge, block, cooldowns, damage,
-  hit arcs; `enemyAi.ts`: idle/patrol/chase/attack state machine; `rewards.ts`; `progression.ts`: levels, XP, derived stats; `inventory.ts`: items, equipment, drops; `quest.ts`: objective tracking). No Babylon
+  hit arcs; `enemyAi.ts`: idle/patrol/chase/attack state machine; `rewards.ts`; `progression.ts`: levels, XP, derived stats; `inventory.ts`: items, equipment, drops; `quest.ts`: accept, track, turn in;
+  `world.ts`: regions, safe zones, spawn placement; `dialogue.ts`: what an NPC says). No Babylon
   or React imports; covered by Vitest.
-- `packages/game-data`: enemy definitions (health, damage, rewards, drops), item
-  definitions and quest definitions.
+- `packages/game-data`: enemy, item and quest definitions; the world layout (`WORLD`:
+  village, spawn zones, roads, map markers); and NPC definitions with their dialogue.
+  The 3D scene and the 2D map are both drawn from this one layout.
 - `apps/web/game/`: the 3D runtime. Imports Babylon and `game-core`, never React.
   - `engine/createGame.ts`: engine and scene lifecycle, frame loop, dispose.
-  - `world/createEnvironment.ts`: ground, scenery, lights, shadows, fog.
+  - `world/createEnvironment.ts`: ground, lights, player-following shadows, and fog and
+    ambient light blended between village and forest.
+  - `world/WorldKit.ts`: places static props as frozen instances of shared templates.
+  - `world/buildVillage.ts`, `world/buildForest.ts`: the scenery itself.
+  - `npcs/NpcManager.ts`: villager figures, quest markers, who is in talking range.
+  - `audio/AmbientAudio.ts`: procedural wind and forest ambience (Web Audio, no files).
   - `input/InputManager.ts`: keyboard and mouse to per-frame intent.
   - `player/PlayerController.ts`: applies movement rules to the mesh, resolves collisions.
   - `camera/ThirdPersonCamera.ts`: orbit camera following the player.
@@ -27,8 +34,13 @@ physics engine is installed.
   - `enemies/WolfEnemy.ts`: placeholder wolf driven by the game-core AI.
   - `items/PickupManager.ts`: collectable items lying in the world.
   - `state/GameStore.ts`: snapshot store the HUD subscribes to.
-- `apps/web/components/game/`: React canvas host, HUD and inventory panel. Reads
-  `GameStore` and calls `GameActions` (use, equip, unequip); contains no game rules.
+- `apps/web/components/game/`: React canvas host, HUD, inventory panel, dialogue panel
+  and world map. Reads `GameStore` and calls `GameActions`; contains no game rules.
+
+Rendering budget: the world is about 1,200 props drawn as instances of roughly 50
+templates. Only four dynamic lights exist (StandardMaterial's per-mesh limit); lanterns
+and windows are self-lit materials. The shadow map covers a fixed area around the
+player and only draws scenery near it. Stationary enemies skip collision checks.
 
 ## Services
 - `services/game-server`: Node.js + Colyseus authoritative battle rooms.

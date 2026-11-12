@@ -95,3 +95,78 @@ export interface QuestDefinition {
   /** Granted once, when the objective is met. */
   reward: Reward;
 }
+
+/** A position on the ground plane. +Z is north, +X is east. */
+export interface WorldPoint {
+  x: number;
+  z: number;
+}
+
+export type RegionKind = "village" | "spawn-zone";
+
+/** A named circular area of the world. */
+export interface WorldRegion {
+  id: string;
+  name: string;
+  kind: RegionKind;
+  center: WorldPoint;
+  radius: number;
+  /** Enemies do not pursue or attack the player inside a safe region. */
+  safe: boolean;
+}
+
+/** A region that is home to a pack of enemies. */
+export interface SpawnZone extends WorldRegion {
+  kind: "spawn-zone";
+  enemyId: EnemyId;
+  enemyCount: number;
+}
+
+export type MapMarkerKind = "settlement" | "gate" | "danger" | "landmark";
+
+export interface MapMarker {
+  id: string;
+  label: string;
+  kind: MapMarkerKind;
+  position: WorldPoint;
+}
+
+/** A straight stretch of road or trail. */
+export interface RoadSegment {
+  from: WorldPoint;
+  to: WorldPoint;
+  width: number;
+}
+
+export type NpcId =
+  | "elder-maren"
+  | "smith-brannoc"
+  | "guard-tolan"
+  | "herbalist-ysolde";
+
+/** What an NPC says about a quest at each stage of it. */
+export interface NpcQuestDialogue {
+  questId: QuestId;
+  /** Spoken while the quest has not been accepted. */
+  offer: readonly string[];
+  /** Spoken while the objective is in progress. */
+  active: readonly string[];
+  /** Spoken when the objective is met and the reward can be claimed. */
+  ready: readonly string[];
+  /** Spoken after the quest has been turned in. */
+  completed: readonly string[];
+}
+
+export interface NpcDefinition {
+  id: NpcId;
+  name: string;
+  title: string;
+  position: WorldPoint;
+  /** Direction the NPC faces when idle, in radians (0 = north). */
+  facing: number;
+  /** Robe colour as RGB in the range 0..1. */
+  robeColor: readonly [number, number, number];
+  /** Spoken when the NPC has nothing quest-related to say. */
+  greeting: readonly string[];
+  quest?: NpcQuestDialogue;
+}

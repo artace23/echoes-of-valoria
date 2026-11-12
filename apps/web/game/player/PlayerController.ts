@@ -39,6 +39,8 @@ const KILL_PLANE_Y = -20;
 const RESPAWN_SECONDS = 3;
 const HIT_FLASH_SECONDS = 0.18;
 const SWORD_LENGTH = 1.1;
+/** Health recovered per second while sheltered in a safe zone. */
+const SHELTER_REGEN = 4;
 
 export interface PlayerOptions {
   spawnPoint: Vector3;
@@ -68,6 +70,8 @@ export class PlayerController {
   private readonly displacement = new Vector3();
   private readonly dodgeDirection = { x: 0, z: 1 };
   private respawnTimer = 0;
+  /** Set by the game each frame: true inside a safe zone. */
+  sheltered = false;
   private hitFlash = 0;
   private readonly sword: Mesh;
   private readonly armor: StandardMaterial;
@@ -123,8 +127,9 @@ export class PlayerController {
     return this.body.position;
   }
 
+  /** Current health, rounded up so a living Warrior never shows 0. */
   get health(): number {
-    return this.currentHealth;
+    return Math.ceil(this.currentHealth);
   }
 
   get healthMax(): number {
@@ -244,6 +249,8 @@ export class PlayerController {
       if (this.respawnTimer <= 0) this.respawn();
       return null;
     }
+
+    if (this.sheltered) this.heal(SHELTER_REGEN * dt);
 
     const body = this.body;
     const combatStep = stepCombat(

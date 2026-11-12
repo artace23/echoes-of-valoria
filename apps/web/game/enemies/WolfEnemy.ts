@@ -187,7 +187,8 @@ export class WolfEnemy implements Enemy {
         position: this.position,
         home: this.options.home,
         playerPosition: opponent.position,
-        playerAlive: !opponent.dead,
+        // A sheltered player is as unreachable as a dead one.
+        playerAlive: !opponent.dead && !opponent.sheltered,
       },
       dt,
       this.rng,
@@ -202,9 +203,17 @@ export class WolfEnemy implements Enemy {
       );
     }
 
-    // The small downward push keeps the collider in contact with the ground.
-    this.displacement.set(step.velocity.x * dt, -2 * dt, step.velocity.z * dt);
-    body.moveWithCollisions(this.displacement);
+    // Collision resolution is the expensive part of an enemy's frame, so a
+    // wolf that is standing still skips it entirely.
+    if (step.velocity.x !== 0 || step.velocity.z !== 0) {
+      // The small downward push keeps the collider on the ground.
+      this.displacement.set(
+        step.velocity.x * dt,
+        -2 * dt,
+        step.velocity.z * dt,
+      );
+      body.moveWithCollisions(this.displacement);
+    }
 
     if (step.facing) {
       const targetYaw = Math.atan2(step.facing.x, step.facing.z);
@@ -213,7 +222,7 @@ export class WolfEnemy implements Enemy {
         (1 - Math.exp(-TURN_SHARPNESS * dt));
     }
 
-    if (step.attack && !opponent.dead) {
+    if (step.attack && !opponent.dead && !opponent.sheltered) {
       const reach = Math.hypot(
         opponent.position.x - body.position.x,
         opponent.position.z - body.position.z,

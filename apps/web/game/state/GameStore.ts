@@ -1,5 +1,14 @@
-import type { Inventory } from "@valoria/game-core";
+import type { Inventory, QuestStatus } from "@valoria/game-core";
 import type { ItemId } from "@valoria/game-types";
+
+/** The conversation currently open, if any. Immutable. */
+export interface DialogueSnapshot {
+  npcName: string;
+  npcTitle: string;
+  lines: readonly string[];
+  /** Label of the action offered after the last line, if there is one. */
+  actionLabel: string | null;
+}
 
 /**
  * Game state the HUD renders. Every field is a primitive or an immutable
@@ -33,9 +42,21 @@ export interface HudSnapshot {
   /** The equipped weapon, if any. */
   weaponId: ItemId | null;
   potionCount: number;
-  /** Progress toward the active quest's objective. */
+  questStatus: QuestStatus;
+  /** Progress toward the quest's objective. */
   questCount: number;
-  questCompleted: boolean;
+  /** Name of the region the player is in. */
+  locationName: string;
+  /** True inside a safe zone, where enemies will not follow. */
+  inSafeZone: boolean;
+  /** What the interact key would do right now, or null. */
+  interactPrompt: string | null;
+  dialogue: DialogueSnapshot | null;
+  /** Player position in whole metres, and heading in radians (0 = north). */
+  playerX: number;
+  playerZ: number;
+  playerHeading: number;
+  soundOn: boolean;
   /** Short-lived message such as a reward, or null. */
   notice: string | null;
   /** The enemy currently targeted, if any. */

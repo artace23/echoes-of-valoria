@@ -28,7 +28,7 @@ const HIT_FLASH_SECONDS = 0.12;
 type Phase = "idle" | "windup" | "recover" | "destroyed";
 
 /**
- * Stationary practice target beside the starting circle. It takes sword hits,
+ * Stationary practice target in the village training yard. It takes sword hits,
  * and swings back with a slow, telegraphed attack (it glows red while winding
  * up) so blocking and dodging can be practised safely. It rebuilds itself a
  * few seconds after being destroyed and gives no reward. It has no movement
