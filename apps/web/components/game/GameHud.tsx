@@ -114,6 +114,7 @@ export function GameHud({
   const combat = DEFAULT_COMBAT_CONFIG;
   const [inventoryOpen, setInventoryOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
+  const [confirmingReset, setConfirmingReset] = useState(false);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -295,6 +296,58 @@ export function GameHud({
           onClose={() => setInventoryOpen(false)}
         />
       )}
+
+      <div className="pointer-events-auto absolute bottom-4 right-4 w-56 border border-gold-muted/40 bg-surface/85 p-2.5 text-xs">
+        {confirmingReset ? (
+          <>
+            <p className="text-ink">
+              Start a new game? This erases your saved progress.
+            </p>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={actions.resetProgress}
+                className="flex-1 border border-blood bg-blood/80 px-2 py-1 uppercase tracking-wider text-ink hover:bg-blood"
+              >
+                Erase
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingReset(false)}
+                className="flex-1 border border-gold-muted/50 px-2 py-1 uppercase tracking-wider text-ink-muted hover:text-ink"
+              >
+                Cancel
+              </button>
+            </div>
+          </>
+        ) : (
+          <>
+            <p className="text-ink-muted">
+              {!hud.saveAvailable
+                ? "Saving is unavailable in this browser."
+                : hud.savedAt
+                  ? `Progress saved at ${hud.savedAt}`
+                  : "Progress saves automatically."}
+            </p>
+            <div className="mt-2 flex gap-2">
+              <button
+                type="button"
+                onClick={actions.saveGame}
+                className="flex-1 border border-gold-muted/50 px-2 py-1 uppercase tracking-wider text-gold hover:bg-gold hover:text-void"
+              >
+                Save now
+              </button>
+              <button
+                type="button"
+                onClick={() => setConfirmingReset(true)}
+                className="flex-1 border border-gold-muted/50 px-2 py-1 uppercase tracking-wider text-ink-muted hover:text-ink"
+              >
+                New game
+              </button>
+            </div>
+          </>
+        )}
+      </div>
 
       {mapOpen && (
         <WorldMap

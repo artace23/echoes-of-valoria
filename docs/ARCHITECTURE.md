@@ -13,7 +13,8 @@ physics engine is installed.
 - `packages/game-core`: rules as pure functions (e.g. `movement.ts`: walking, sprint and
   stamina, jump, gravity; `combat.ts`: attack timing, dodge, block, cooldowns, damage,
   hit arcs; `enemyAi.ts`: idle/patrol/chase/attack state machine; `rewards.ts`; `progression.ts`: levels, XP, derived stats; `inventory.ts`: items, equipment, drops; `quest.ts`: accept, track, turn in;
-  `world.ts`: regions, safe zones, spawn placement; `dialogue.ts`: what an NPC says). No Babylon
+  `world.ts`: regions, safe zones, spawn placement; `dialogue.ts`: what an NPC says;
+  `save.ts`: the save format and its validation). No Babylon
   or React imports; covered by Vitest.
 - `packages/game-data`: enemy, item and quest definitions; the world layout (`WORLD`:
   village, spawn zones, roads, map markers); and NPC definitions with their dialogue.
@@ -26,6 +27,7 @@ physics engine is installed.
   - `world/buildVillage.ts`, `world/buildForest.ts`: the scenery itself.
   - `npcs/NpcManager.ts`: villager figures, quest markers, who is in talking range.
   - `audio/AmbientAudio.ts`: procedural wind and forest ambience (Web Audio, no files).
+  - `save/SaveStorage.ts`: guarded access to the browser's localStorage.
   - `input/InputManager.ts`: keyboard and mouse to per-frame intent.
   - `player/PlayerController.ts`: applies movement rules to the mesh, resolves collisions.
   - `camera/ThirdPersonCamera.ts`: orbit camera following the player.
@@ -36,6 +38,16 @@ physics engine is installed.
   - `state/GameStore.ts`: snapshot store the HUD subscribes to.
 - `apps/web/components/game/`: React canvas host, HUD, inventory panel, dialogue panel
   and world map. Reads `GameStore` and calls `GameActions`; contains no game rules.
+
+Saving: progress is stored in the browser's localStorage under one versioned key.
+It is written every few seconds when something changed, when the page is hidden or
+closed, and on demand. Only durable state is saved (level, XP, gold, health,
+inventory, equipment, quest, collected world pickups), never position, stamina,
+cooldowns or enemies. A save is the player's to edit, so `parseSave` treats it as
+untrusted: unknown items, impossible numbers, or a quest state that does not match
+its kill count all cause the save to be rejected and a new game to start. This is
+local single-player persistence only; the server-authoritative rules in `CLAUDE.md`
+still apply once accounts and Supabase exist.
 
 Rendering budget: the world is about 1,200 props drawn as instances of roughly 50
 templates. Only four dynamic lights exist (StandardMaterial's per-mesh limit); lanterns

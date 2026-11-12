@@ -30,7 +30,11 @@ prototype; progress is saved locally. Milestones 2–5 below describe the earlie
    zone), a reusable NPC system with dialogue, the quest accepted from and turned in to
    the village elder, an expanded Whispering Forest with three wolf spawn zones, a world
    map with markers, location-based fog and lighting, and procedural ambient sound.
-8. Local save/load of level, XP, gold, inventory, equipment and quest progress.
+8. **Done** — Local save/load: level, XP, gold, health, inventory, equipment, quest
+   progress and collected world pickups persist in the browser, with autosave, a
+   validated load, and a New game reset.
+
+All eight prototype milestones are complete.
 
 ## Milestone 0 — Repository inspection and plan
 Inspect existing files and tooling. Do not overwrite an existing project blindly.

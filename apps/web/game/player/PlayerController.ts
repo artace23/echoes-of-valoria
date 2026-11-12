@@ -196,6 +196,15 @@ export class PlayerController {
     return this.combat.cooldowns;
   }
 
+  /** Set health directly, e.g. when loading a save. Kept within 1..max. */
+  setHealth(value: number): void {
+    if (this.dead) return;
+    this.currentHealth = Math.min(
+      this.characterStats.healthMax,
+      Math.max(1, value),
+    );
+  }
+
   /** Restore health, up to the maximum. Returns the amount restored. */
   heal(amount: number): number {
     if (this.dead) return 0;

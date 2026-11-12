@@ -19,3 +19,4 @@ export * from "./inventory";
 export * from "./quest";
 export * from "./world";
 export * from "./dialogue";
+export * from "./save";

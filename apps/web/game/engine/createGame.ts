@@ -2,6 +2,8 @@ import "@babylonjs/core/Collisions/collisionCoordinator";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
 import {
+  DEFAULT_INVENTORY_CAPACITY,
+  SAVE_VERSION,
   acceptQuest,
   addItem,
   countItem,
@@ -16,8 +18,10 @@ import {
   grantReward,
   isInSafeZone,
   isWithinArc,
+  parseSave,
   recordEnemyDefeated,
   rollDrops,
+  serializeSave,
   turnInQuest,
   unequipWeapon,
   useConsumable,
@@ -27,10 +31,12 @@ import {
   type DialogueView,
   type Equipment,
   type MoveIntent,
+  type SaveData,
 } from "@valoria/game-core";
 import {
   CORRUPTED_WOLF,
   CULL_THE_PACK,
+  ITEMS,
   NPCS,
   WORLD,
   getItem,
@@ -45,6 +51,7 @@ import { InputManager } from "../input/InputManager";
 import { PickupManager } from "../items/PickupManager";
 import { NpcManager } from "../npcs/NpcManager";
 import { PlayerController } from "../player/PlayerController";
+import { SaveStorage } from "../save/SaveStorage";
 import {
   GameStore,
   type DialogueSnapshot,
@@ -66,6 +73,8 @@ const NOTICE_SECONDS_WHEN_QUEUED = 1.6;
  * the key press that closed it cannot immediately start it again.
  */
 const INTERACT_LOCKOUT_SECONDS = 0.35;
+/** How often progress is written to storage, if anything changed. */
+const AUTOSAVE_SECONDS = 3;
 const POTION: ItemId = "health-potion";
 
 const IDLE_MOVE: MoveIntent = {
@@ -92,6 +101,10 @@ export interface GameActions {
   dialogueAction(): void;
   closeDialogue(): void;
   toggleSound(): void;
+  /** Write progress to storage now. */
+  saveGame(): void;
+  /** Erase saved progress and start over. Reloads the page. */
+  resetProgress(): void;
 }
 
 export interface GameHandle {
@@ -132,10 +145,27 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
 
   // Character state. Rules live in game-core; this module only holds the
   // current values and applies their effects to the world.
-  let progress = createCharacterProgress();
-  let inventory = addItem(createInventory(), getItem(POTION), 2).inventory;
-  let equipment: Equipment = { weapon: "rusty-sword" };
-  let quest = createQuestProgress(CULL_THE_PACK);
+  //
+  // A stored save is validated by game-core before anything is taken from
+  // it; an unreadable or tampered save is ignored and a new game begins.
+  const storage = new SaveStorage();
+  const storedText = storage.read();
+  const loaded = storedText
+    ? parseSave(storedText, {
+        items: ITEMS,
+        quest: CULL_THE_PACK,
+        inventoryCapacity: DEFAULT_INVENTORY_CAPACITY,
+      })
+    : null;
+
+  let progress = loaded?.progress ?? createCharacterProgress();
+  let inventory =
+    loaded?.inventory ??
+    addItem(createInventory(), getItem(POTION), 2).inventory;
+  let equipment: Equipment = loaded?.equipment ?? { weapon: "rusty-sword" };
+  let quest = loaded?.quest ?? createQuestProgress(CULL_THE_PACK);
+  /** One-off world pickups already taken; they are not placed again. */
+  const collectedPickups = new Set<string>(loaded?.collectedPickups ?? []);
   let notice: string | null = null;
   let noticeAge = 0;
   const pendingNotices: string[] = [];
@@ -160,6 +190,44 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
     player.setWeaponVisual(weapon?.kind === "weapon" ? weapon : null);
   };
   refreshStats(true);
+  if (loaded) {
+    player.setHealth(loaded.health);
+    showNotice("Welcome back. Your progress was restored.");
+  } else if (storedText) {
+    showNotice("Your saved progress could not be read. Starting anew.");
+  }
+
+  // --- Saving --------------------------------------------------------------
+  let lastSavedText = loaded ? storedText : null;
+  let savedAt: string | null = null;
+  let saveTimer = 0;
+  let savingEnabled = true;
+
+  const buildSave = (): SaveData => ({
+    version: SAVE_VERSION,
+    progress,
+    // A fallen Warrior respawns at full health, so save that instead of 0.
+    health: player.dead ? player.healthMax : player.health,
+    inventory,
+    equipment,
+    quest,
+    collectedPickups: [...collectedPickups],
+  });
+
+  /** Write progress if it changed (or always, with `force`). */
+  const saveNow = (force = false): boolean => {
+    if (!savingEnabled) return false;
+    const text = serializeSave(buildSave());
+    if (!force && text === lastSavedText) return true;
+    if (!storage.write(text)) return false;
+    lastSavedText = text;
+    savedAt = new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    return true;
+  };
 
   /** Add XP and gold; levelling up raises stats and restores the Warrior. */
   const receiveReward = (reward: { xp: number; gold: number }) => {
@@ -217,11 +285,15 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
   const pickups = new PickupManager(scene);
   // A potion left out by the herbalist, and a better sword at the cart
   // abandoned on the forest road.
-  pickups.spawn(getItem(POTION), -18.8, -47.4);
+  const placeWorldPickup = (id: string, itemId: ItemId, x: number, z: number) => {
+    if (!collectedPickups.has(id)) pickups.spawn(getItem(itemId), x, z, id);
+  };
+  placeWorldPickup("village-potion", POTION, -18.8, -47.4);
   const cart = WORLD.markers.find((marker) => marker.id === "abandoned-cart");
   if (cart) {
-    pickups.spawn(
-      getItem("iron-sword"),
+    placeWorldPickup(
+      "cart-iron-sword",
+      "iron-sword",
       cart.position.x - 1.8,
       cart.position.z + 1.4,
     );
@@ -293,6 +365,19 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
     toggleSound() {
       audio.unlock();
       audio.setMuted(!audio.isMuted);
+    },
+    saveGame() {
+      showNotice(
+        saveNow(true)
+          ? "Progress saved"
+          : "Could not save: browser storage is unavailable",
+      );
+    },
+    resetProgress() {
+      // Stop saving first, or the autosave would write the old game back.
+      savingEnabled = false;
+      storage.clear();
+      window.location.reload();
     },
   };
 
@@ -367,12 +452,13 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
   };
 
   /** Try to put a world pickup into the inventory. */
-  const collect = (itemId: ItemId): boolean => {
+  const collect = (itemId: ItemId, pickupId: string | null): boolean => {
     if (player.dead) return false;
     const item = getItem(itemId);
     const result = addItem(inventory, item);
     if (result.added === 0) return false;
     inventory = result.inventory;
+    if (pickupId) collectedPickups.add(pickupId);
     showNotice(`Picked up ${item.name}`);
     return true;
   };
@@ -416,6 +502,8 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       playerZ: Math.round(player.position.z),
       playerHeading: Math.round(Math.atan2(facing.x, facing.z) * 8) / 8,
       soundOn: !audio.isMuted,
+      savedAt,
+      saveAvailable: storage.available,
       notice,
       targetName: target?.name ?? null,
       targetHealth: target?.health ?? 0,
@@ -484,6 +572,12 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       }
     }
 
+    saveTimer += dt;
+    if (saveTimer >= AUTOSAVE_SECONDS) {
+      saveTimer = 0;
+      saveNow();
+    }
+
     camera.update(player.position, input.consumeLook(), dt);
     const wild = environment.update(player.position);
     audio.update(dt, wild);
@@ -498,6 +592,14 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
   };
   window.addEventListener("pointerdown", unlockAudio);
   window.addEventListener("keydown", unlockAudio);
+
+  // Save when the page is hidden or closed, so nothing recent is lost.
+  const saveOnLeave = () => {
+    if (document.visibilityState !== "visible") saveNow();
+  };
+  const saveOnPageHide = () => saveNow();
+  document.addEventListener("visibilitychange", saveOnLeave);
+  window.addEventListener("pagehide", saveOnPageHide);
 
   if (process.env.NODE_ENV !== "production") {
     // Development-only handle for inspecting the running game from the console.
@@ -527,6 +629,9 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       get dialogue() {
         return dialogue;
       },
+      get collectedPickups() {
+        return [...collectedPickups];
+      },
     };
   }
 
@@ -541,6 +646,9 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       window.removeEventListener("resize", onResize);
       window.removeEventListener("pointerdown", unlockAudio);
       window.removeEventListener("keydown", unlockAudio);
+      document.removeEventListener("visibilitychange", saveOnLeave);
+      window.removeEventListener("pagehide", saveOnPageHide);
+      saveNow();
       input.dispose();
       audio.dispose();
       engine.stopRenderLoop();

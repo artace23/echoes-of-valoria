@@ -11,6 +11,8 @@ const COLLECT_RADIUS = 1.3;
 const HOVER_HEIGHT = 0.75;
 
 interface Pickup {
+  /** Set for one-off world pickups, so taking them can be remembered. */
+  id: string | null;
   itemId: ItemId;
   mesh: Mesh;
   /** Offsets the bobbing so pickups do not move in unison. */
@@ -43,7 +45,16 @@ export class PickupManager {
     return this.pickups.length;
   }
 
-  spawn(item: ItemDefinition, x: number, z: number): void {
+  /**
+   * Place an item in the world. Give one-off pickups an `id`; it is passed
+   * back when the item is collected. Enemy drops have none.
+   */
+  spawn(
+    item: ItemDefinition,
+    x: number,
+    z: number,
+    id: string | null = null,
+  ): void {
     const name = `pickup-${item.id}-${this.pickups.length}`;
     let mesh: Mesh;
     if (item.kind === "weapon") {
@@ -64,7 +75,12 @@ export class PickupManager {
     }
     mesh.position.set(x, HOVER_HEIGHT, z);
     mesh.isPickable = false;
-    this.pickups.push({ itemId: item.id, mesh, phase: x * 1.7 + z * 0.9 });
+    this.pickups.push({
+      id,
+      itemId: item.id,
+      mesh,
+      phase: x * 1.7 + z * 0.9,
+    });
   }
 
   /**
@@ -74,7 +90,7 @@ export class PickupManager {
   update(
     dt: number,
     collector: { x: number; z: number },
-    tryCollect: (itemId: ItemId) => boolean,
+    tryCollect: (itemId: ItemId, pickupId: string | null) => boolean,
   ): void {
     this.time += dt;
     for (let i = this.pickups.length - 1; i >= 0; i--) {
@@ -89,7 +105,10 @@ export class PickupManager {
         mesh.position.x - collector.x,
         mesh.position.z - collector.z,
       );
-      if (distance <= COLLECT_RADIUS && tryCollect(pickup.itemId)) {
+      if (
+        distance <= COLLECT_RADIUS &&
+        tryCollect(pickup.itemId, pickup.id)
+      ) {
         mesh.dispose();
         this.pickups.splice(i, 1);
       }

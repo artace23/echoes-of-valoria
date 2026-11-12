@@ -57,6 +57,10 @@ export interface HudSnapshot {
   playerZ: number;
   playerHeading: number;
   soundOn: boolean;
+  /** Local time of the last successful save, or null if none yet. */
+  savedAt: string | null;
+  /** False when the browser will not let the game store anything. */
+  saveAvailable: boolean;
   /** Short-lived message such as a reward, or null. */
   notice: string | null;
   /** The enemy currently targeted, if any. */
