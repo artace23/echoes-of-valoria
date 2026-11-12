@@ -39,11 +39,10 @@ function Bar({
 
 const CONTROLS: [string, string][] = [
   ["WASD", "Move"],
-  ["Mouse", "Look"],
+  ["Drag / Arrows", "Look"],
   ["Shift", "Sprint"],
   ["Space", "Jump"],
-  ["Wheel", "Zoom"],
-  ["Esc", "Release mouse"],
+  ["Scroll", "Zoom"],
 ];
 
 export function GameHud({ store }: { store: GameStore }) {
@@ -71,11 +70,11 @@ export function GameHud({ store }: { store: GameStore }) {
         />
       </div>
 
-      {!hud.pointerLocked && (
-        <p className="absolute left-1/2 top-1/3 -translate-x-1/2 border border-gold-muted/40 bg-surface/85 px-5 py-3 text-center font-display text-sm tracking-[0.2em] text-gold">
-          Click to take control
-        </p>
-      )}
+      <p className="absolute left-1/2 top-4 w-max max-w-[calc(100%-2rem)] -translate-x-1/2 border border-gold-muted/30 bg-surface/70 px-4 py-1.5 text-center text-xs tracking-wide text-ink-muted">
+        {hud.pointerLocked
+          ? "Move mouse to look around | WASD to move | Esc to release"
+          : "Drag to look around | WASD to move"}
+      </p>
 
       <ul className="absolute bottom-4 left-1/2 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-wrap justify-center gap-x-5 gap-y-1 border border-gold-muted/30 bg-surface/70 px-4 py-2 text-xs text-ink-muted">
         {CONTROLS.map(([key, action]) => (
