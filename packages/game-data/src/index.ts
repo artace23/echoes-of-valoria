@@ -6,6 +6,7 @@ import type {
   ItemDefinition,
   ItemId,
   LocationDefinition,
+  QuestDefinition,
 } from "@valoria/game-types";
 
 export const CHARACTER_CLASSES: readonly CharacterClassDefinition[] = [
@@ -77,3 +78,11 @@ export const ITEMS: Readonly<Record<ItemId, ItemDefinition>> = {
 export function getItem(id: ItemId): ItemDefinition {
   return ITEMS[id];
 }
+
+export const CULL_THE_PACK: QuestDefinition = {
+  id: "cull-the-pack",
+  name: "Cull the Pack",
+  description: "Corrupted wolves have claimed the forest clearing. Thin their numbers.",
+  objective: { kind: "defeat", enemyId: "corrupted-wolf", count: 3 },
+  reward: { xp: 80, gold: 40 },
+};

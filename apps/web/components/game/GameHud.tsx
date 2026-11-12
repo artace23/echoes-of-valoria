@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { DEFAULT_COMBAT_CONFIG } from "@valoria/game-core";
+import { CULL_THE_PACK } from "@valoria/game-data";
 import type { GameActions } from "@/game/engine/createGame";
 import type { GameStore } from "@/game/state/GameStore";
 import { InventoryPanel } from "./InventoryPanel";
@@ -199,6 +200,36 @@ export function GameHud({
       >
         Inventory <span className="text-ink-muted">(I)</span>
       </button>
+      {!inventoryOpen && (
+        <section
+          aria-label="Quest"
+          className="absolute right-4 top-16 w-64 max-w-[calc(100%-2rem)] border border-gold-muted/40 bg-surface/80 p-3"
+        >
+          <p className="flex items-baseline justify-between text-[11px] uppercase tracking-[0.2em] text-ink-muted">
+            <span>Quest</span>
+            {hud.questCompleted && <span className="text-gold">Completed</span>}
+          </p>
+          <h2 className="mt-1 font-display text-sm tracking-wide text-gold">
+            {CULL_THE_PACK.name}
+          </h2>
+          <p className="mt-1 text-xs text-ink-muted">
+            {CULL_THE_PACK.description}
+          </p>
+          <div className="mt-2">
+            <Bar
+              label="Wolves defeated"
+              value={hud.questCount}
+              max={CULL_THE_PACK.objective.count}
+              fillClass="bg-gold"
+            />
+          </div>
+          <p className="mt-2 text-xs text-ink-muted">
+            {hud.questCompleted ? "Reward received" : "Reward"}:{" "}
+            <span className="text-ink">{CULL_THE_PACK.reward.xp} XP</span>,{" "}
+            <span className="text-gold">{CULL_THE_PACK.reward.gold} gold</span>
+          </p>
+        </section>
+      )}
       {inventoryOpen && (
         <InventoryPanel
           inventory={hud.inventory}

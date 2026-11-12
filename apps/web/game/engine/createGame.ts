@@ -6,10 +6,12 @@ import {
   countItem,
   createCharacterProgress,
   createInventory,
+  createQuestProgress,
   deriveStats,
   equipWeapon,
   grantReward,
   isWithinArc,
+  recordEnemyDefeated,
   rollDrops,
   unequipWeapon,
   useConsumable,
@@ -17,7 +19,7 @@ import {
   xpToNextLevel,
   type Equipment,
 } from "@valoria/game-core";
-import { CORRUPTED_WOLF, getItem } from "@valoria/game-data";
+import { CORRUPTED_WOLF, CULL_THE_PACK, getItem } from "@valoria/game-data";
 import type { ItemId } from "@valoria/game-types";
 import { ThirdPersonCamera } from "../camera/ThirdPersonCamera";
 import { TrainingDummy } from "../combat/TrainingDummy";
@@ -36,8 +38,10 @@ const TARGET_RANGE = 12;
 /** Wolves in the encounter clearing, and how far from its centre they live. */
 const WOLF_COUNT = 3;
 const WOLF_HOME_RADIUS = 5;
-/** Seconds a notice stays on screen. */
-const NOTICE_SECONDS = 3.5;
+/** Seconds a notice stays on screen. Queued notices show one after another. */
+const NOTICE_SECONDS = 3;
+/** A notice is cut short to this when others are waiting behind it. */
+const NOTICE_SECONDS_WHEN_QUEUED = 1.6;
 const POTION: ItemId = "health-potion";
 
 /** Things the HUD can ask the game to do. */
@@ -80,12 +84,29 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
   let progress = createCharacterProgress();
   let inventory = addItem(createInventory(), getItem(POTION), 2).inventory;
   let equipment: Equipment = { weapon: "rusty-sword" };
+  let quest = createQuestProgress(CULL_THE_PACK);
   let notice: string | null = null;
-  let noticeTimer = 0;
+  let noticeAge = 0;
+  const pendingNotices: string[] = [];
 
+  /** Show a message; if one is already showing, it waits its turn. */
   const showNotice = (message: string) => {
-    notice = message;
-    noticeTimer = NOTICE_SECONDS;
+    if (notice === null) {
+      notice = message;
+      noticeAge = 0;
+    } else if (notice !== message && !pendingNotices.includes(message)) {
+      pendingNotices.push(message);
+    }
+  };
+
+  /** Add XP and gold; levelling up raises stats and restores the Warrior. */
+  const receiveReward = (reward: { xp: number; gold: number }) => {
+    const result = grantReward(progress, reward);
+    progress = result.progress;
+    if (result.levelsGained > 0) {
+      refreshStats(true);
+      showNotice(`Level up! You are now level ${progress.level}`);
+    }
   };
 
   /** Recompute stats from level and equipment and apply them to the player. */
@@ -170,13 +191,21 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
         z: environment.encounterArea.z + Math.sin(angle) * WOLF_HOME_RADIUS,
       },
       onDeath: (reward, wolf) => {
-        const result = grantReward(progress, reward);
-        progress = result.progress;
         showNotice(`${wolf.name} slain: +${reward.xp} XP, +${reward.gold} gold`);
-        if (result.levelsGained > 0) {
-          // Levelling up raises stats and fully restores the Warrior.
-          refreshStats(true);
-          showNotice(`Level up! You are now level ${progress.level}`);
+        receiveReward(reward);
+
+        const update = recordEnemyDefeated(
+          quest,
+          CULL_THE_PACK,
+          CORRUPTED_WOLF.id,
+        );
+        quest = update.progress;
+        if (update.justCompleted) {
+          const questReward = CULL_THE_PACK.reward;
+          showNotice(
+            `Quest complete: ${CULL_THE_PACK.name}. +${questReward.xp} XP, +${questReward.gold} gold`,
+          );
+          receiveReward(questReward);
         }
 
         // Item drops land where the wolf fell, slightly spread out.
@@ -253,6 +282,8 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       inventory,
       weaponId: equipment.weapon,
       potionCount: countItem(inventory, POTION),
+      questCount: quest.count,
+      questCompleted: quest.status === "completed",
       notice,
       targetName: target?.name ?? null,
       targetHealth: target?.health ?? 0,
@@ -294,9 +325,14 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
     for (const enemy of enemies) enemy.update(dt, player);
     pickups.update(dt, player.position, collect);
 
-    if (noticeTimer > 0) {
-      noticeTimer -= dt;
-      if (noticeTimer <= 0) notice = null;
+    if (notice !== null) {
+      noticeAge += dt;
+      const lifetime =
+        pendingNotices.length > 0 ? NOTICE_SECONDS_WHEN_QUEUED : NOTICE_SECONDS;
+      if (noticeAge >= lifetime) {
+        notice = pendingNotices.shift() ?? null;
+        noticeAge = 0;
+      }
     }
 
     camera.update(player.position, input.consumeLook(), dt);
@@ -321,6 +357,9 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       },
       get equipment() {
         return equipment;
+      },
+      get quest() {
+        return quest;
       },
     };
   }

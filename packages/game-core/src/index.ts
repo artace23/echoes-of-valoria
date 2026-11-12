@@ -16,3 +16,4 @@ export * from "./enemyAi";
 export * from "./rewards";
 export * from "./progression";
 export * from "./inventory";
+export * from "./quest";

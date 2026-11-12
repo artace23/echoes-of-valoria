@@ -12,10 +12,10 @@ physics engine is installed.
 
 - `packages/game-core`: rules as pure functions (e.g. `movement.ts`: walking, sprint and
   stamina, jump, gravity; `combat.ts`: attack timing, dodge, block, cooldowns, damage,
-  hit arcs; `enemyAi.ts`: idle/patrol/chase/attack state machine; `rewards.ts`; `progression.ts`: levels, XP, derived stats; `inventory.ts`: items, equipment, drops). No Babylon
+  hit arcs; `enemyAi.ts`: idle/patrol/chase/attack state machine; `rewards.ts`; `progression.ts`: levels, XP, derived stats; `inventory.ts`: items, equipment, drops; `quest.ts`: objective tracking). No Babylon
   or React imports; covered by Vitest.
-- `packages/game-data`: enemy definitions (health, damage, rewards, drops) and item
-  definitions.
+- `packages/game-data`: enemy definitions (health, damage, rewards, drops), item
+  definitions and quest definitions.
 - `apps/web/game/`: the 3D runtime. Imports Babylon and `game-core`, never React.
   - `engine/createGame.ts`: engine and scene lifecycle, frame loop, dispose.
   - `world/createEnvironment.ts`: ground, scenery, lights, shadows, fog.

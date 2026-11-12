@@ -77,3 +77,21 @@ export interface ItemDrop {
   /** Probability from 0 to 1. */
   chance: number;
 }
+
+export type QuestId = "cull-the-pack";
+
+/** What a quest asks for. Only "defeat N of an enemy" exists so far. */
+export interface DefeatObjective {
+  kind: "defeat";
+  enemyId: EnemyId;
+  count: number;
+}
+
+export interface QuestDefinition {
+  id: QuestId;
+  name: string;
+  description: string;
+  objective: DefeatObjective;
+  /** Granted once, when the objective is met. */
+  reward: Reward;
+}

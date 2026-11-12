@@ -33,6 +33,9 @@ export interface HudSnapshot {
   /** The equipped weapon, if any. */
   weaponId: ItemId | null;
   potionCount: number;
+  /** Progress toward the active quest's objective. */
+  questCount: number;
+  questCompleted: boolean;
   /** Short-lived message such as a reward, or null. */
   notice: string | null;
   /** The enemy currently targeted, if any. */
