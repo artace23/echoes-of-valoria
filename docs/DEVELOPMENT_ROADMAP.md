@@ -18,7 +18,8 @@ prototype; progress is saved locally. Milestones 2–5 below describe the earlie
 1. **Done** — 3D scene, player controller, third-person camera, movement, collision.
 2. **Done** — Combat: sword attack, heavy attack, dodge, block, cooldowns, damage,
    death/respawn. Practised against a stationary training construct until the wolf exists.
-3. Enemy: placeholder wolf with idle, patrol, chase and attack states, and reward drops.
+3. **Done** — Enemy: placeholder wolf with idle, patrol, chase and attack states, and
+   XP/gold reward drops. Three wolves live in the encounter clearing.
 4. Progression: level, XP, gold, stat growth.
 5. Inventory and equipment: pick up, store, use potions, equip a weapon.
 6. Quest: defeat three corrupted wolves, with XP and gold on completion.

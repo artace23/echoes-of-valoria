@@ -2,6 +2,7 @@
 
 import type {
   CharacterClassDefinition,
+  EnemyDefinition,
   LocationDefinition,
 } from "@valoria/game-types";
 
@@ -32,3 +33,13 @@ export const LOCATIONS: readonly LocationDefinition[] = [
     requiredLevel: 2,
   },
 ];
+
+// Provisional tuning values for the prototype.
+export const CORRUPTED_WOLF: EnemyDefinition = {
+  id: "corrupted-wolf",
+  name: "Corrupted Wolf",
+  healthMax: 45,
+  defense: 0,
+  attackDamage: 9,
+  reward: { xp: 20, goldMin: 4, goldMax: 9 },
+};

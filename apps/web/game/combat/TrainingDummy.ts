@@ -7,9 +7,9 @@ import type { Scene } from "@babylonjs/core/scene";
 import {
   applyDamage,
   calculateDamage,
-  type DamageOutcome,
   type PlanarVector,
 } from "@valoria/game-core";
+import type { Enemy, Opponent } from "../enemies/Enemy";
 
 const HEALTH_MAX = 120;
 const DEFENSE = 10;
@@ -27,21 +27,14 @@ const HIT_FLASH_SECONDS = 0.12;
 
 type Phase = "idle" | "windup" | "recover" | "destroyed";
 
-/** What the construct needs to know about, and do to, its opponent. */
-export interface DummyOpponent {
-  readonly position: { x: number; z: number };
-  readonly dead: boolean;
-  receiveAttack(damage: number, attacker: PlanarVector): DamageOutcome;
-}
-
 /**
- * Stationary practice target for the combat milestone. It takes sword hits,
+ * Stationary practice target beside the starting circle. It takes sword hits,
  * and swings back with a slow, telegraphed attack (it glows red while winding
- * up) so blocking and dodging can be practised. It rebuilds itself a few
- * seconds after being destroyed. The wolf enemy will replace it as the real
- * opponent; this has no movement or decision-making.
+ * up) so blocking and dodging can be practised safely. It rebuilds itself a
+ * few seconds after being destroyed and gives no reward. It has no movement
+ * or decision-making; real enemies use the game-core AI.
  */
-export class TrainingDummy {
+export class TrainingDummy implements Enemy {
   readonly name = "Training Construct";
   readonly healthMax = HEALTH_MAX;
   readonly radius = BODY_RADIUS;
@@ -99,6 +92,10 @@ export class TrainingDummy {
     return this.phase === "destroyed";
   }
 
+  get alive(): boolean {
+    return !this.destroyed;
+  }
+
   get meshes(): Mesh[] {
     return [this.body, ...(this.body.getChildMeshes() as Mesh[])];
   }
@@ -117,7 +114,7 @@ export class TrainingDummy {
     return damage;
   }
 
-  update(dt: number, opponent: DummyOpponent): void {
+  update(dt: number, opponent: Opponent): void {
     this.hitFlash = Math.max(0, this.hitFlash - dt);
     this.timer = Math.max(0, this.timer - dt);
 

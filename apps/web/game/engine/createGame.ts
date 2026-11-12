@@ -2,8 +2,11 @@ import "@babylonjs/core/Collisions/collisionCoordinator";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
 import { isWithinArc } from "@valoria/game-core";
+import { CORRUPTED_WOLF } from "@valoria/game-data";
 import { ThirdPersonCamera } from "../camera/ThirdPersonCamera";
 import { TrainingDummy } from "../combat/TrainingDummy";
+import type { Enemy } from "../enemies/Enemy";
+import { WolfEnemy } from "../enemies/WolfEnemy";
 import { InputManager } from "../input/InputManager";
 import { PlayerController } from "../player/PlayerController";
 import { GameStore, type HudSnapshot } from "../state/GameStore";
@@ -13,6 +16,11 @@ import { createEnvironment } from "../world/createEnvironment";
 const MAX_FRAME_SECONDS = 0.05;
 /** An enemy this close is shown as the current target in the HUD. */
 const TARGET_RANGE = 12;
+/** Wolves in the encounter clearing, and how far from its centre they live. */
+const WOLF_COUNT = 3;
+const WOLF_HOME_RADIUS = 5;
+/** Seconds a reward notice stays on screen. */
+const NOTICE_SECONDS = 3.5;
 
 export interface GameHandle {
   /** Live game state for the HUD. */
@@ -39,21 +47,63 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
   for (const mesh of player.meshes) environment.addShadowCaster(mesh);
   const camera = new ThirdPersonCamera(scene, player.position);
 
+  // Running totals from defeated enemies. Levels come with progression.
+  const loot = { xp: 0, gold: 0 };
+  let notice: string | null = null;
+  let noticeTimer = 0;
+
+  // Practice target on the west side of the starting circle.
   const dummy = new TrainingDummy(
     scene,
-    environment.encounterArea.x,
-    environment.encounterArea.z,
+    environment.spawnPoint.x - 4.3,
+    environment.spawnPoint.z,
   );
-  for (const mesh of dummy.meshes) environment.addShadowCaster(mesh);
+  const wolves = Array.from({ length: WOLF_COUNT }, (_, index) => {
+    const angle = Math.PI / 2 + (index / WOLF_COUNT) * Math.PI * 2;
+    return new WolfEnemy(scene, {
+      definition: CORRUPTED_WOLF,
+      home: {
+        x: environment.encounterArea.x + Math.cos(angle) * WOLF_HOME_RADIUS,
+        z: environment.encounterArea.z + Math.sin(angle) * WOLF_HOME_RADIUS,
+      },
+      onDeath: (reward, wolf) => {
+        loot.xp += reward.xp;
+        loot.gold += reward.gold;
+        notice = `${wolf.name} slain: +${reward.xp} XP, +${reward.gold} gold`;
+        noticeTimer = NOTICE_SECONDS;
+      },
+    });
+  });
+  const enemies: Enemy[] = [dummy, ...wolves];
+  for (const enemy of enemies) {
+    for (const mesh of enemy.meshes) environment.addShadowCaster(mesh);
+  }
+
+  const distanceToPlayer = (enemy: Enemy) => {
+    const position = enemy.position;
+    return Math.hypot(
+      position.x - player.position.x,
+      position.z - player.position.z,
+    );
+  };
+
+  /** The nearest living enemy within targeting range, if any. */
+  const findTarget = (): Enemy | null => {
+    let best: Enemy | null = null;
+    let bestDistance = TARGET_RANGE;
+    for (const enemy of enemies) {
+      if (!enemy.alive) continue;
+      const distance = distanceToPlayer(enemy);
+      if (distance <= bestDistance) {
+        best = enemy;
+        bestDistance = distance;
+      }
+    }
+    return best;
+  };
 
   const readSnapshot = (): HudSnapshot => {
-    const dummyPosition = dummy.position;
-    const targeted =
-      !dummy.destroyed &&
-      Math.hypot(
-        dummyPosition.x - player.position.x,
-        dummyPosition.z - player.position.z,
-      ) <= TARGET_RANGE;
+    const target = findTarget();
     return {
       health: player.health,
       healthMax: player.healthMax,
@@ -66,9 +116,12 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       cooldownLight: tenths(player.cooldowns.light),
       cooldownHeavy: tenths(player.cooldowns.heavy),
       cooldownDodge: tenths(player.cooldowns.dodge),
-      targetName: targeted ? dummy.name : null,
-      targetHealth: targeted ? dummy.health : 0,
-      targetHealthMax: targeted ? dummy.healthMax : 0,
+      xp: loot.xp,
+      gold: loot.gold,
+      notice,
+      targetName: target?.name ?? null,
+      targetHealth: target?.health ?? 0,
+      targetHealthMax: target?.healthMax ?? 0,
       pointerLocked: input.pointerLocked,
     };
   };
@@ -83,21 +136,30 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       camera.forward,
       dt,
     );
-    if (
-      strike &&
-      !dummy.destroyed &&
-      isWithinArc(
-        strike.origin,
-        strike.facing,
-        dummy.position,
-        dummy.radius,
-        strike.range,
-        strike.arcDegrees,
-      )
-    ) {
-      dummy.receiveStrike(strike.damage);
+    // A swing hits every living enemy inside its arc.
+    if (strike) {
+      for (const enemy of enemies) {
+        if (
+          enemy.alive &&
+          isWithinArc(
+            strike.origin,
+            strike.facing,
+            enemy.position,
+            enemy.radius,
+            strike.range,
+            strike.arcDegrees,
+          )
+        ) {
+          enemy.receiveStrike(strike.damage);
+        }
+      }
     }
-    dummy.update(dt, player);
+    for (const enemy of enemies) enemy.update(dt, player);
+
+    if (noticeTimer > 0) {
+      noticeTimer -= dt;
+      if (noticeTimer <= 0) notice = null;
+    }
 
     camera.update(player.position, input.consumeLook(), dt);
     store.update(readSnapshot());
@@ -110,6 +172,8 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       player,
       camera,
       dummy,
+      wolves,
+      loot,
     };
   }
 

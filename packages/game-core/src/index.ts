@@ -12,3 +12,5 @@ export function isLocationUnlocked(
 
 export * from "./movement";
 export * from "./combat";
+export * from "./enemyAi";
+export * from "./rewards";

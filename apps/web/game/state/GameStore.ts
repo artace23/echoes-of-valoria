@@ -16,6 +16,11 @@ export interface HudSnapshot {
   cooldownLight: number;
   cooldownHeavy: number;
   cooldownDodge: number;
+  /** Running totals. Levels arrive with the progression milestone. */
+  xp: number;
+  gold: number;
+  /** Short-lived message such as a reward, or null. */
+  notice: string | null;
   /** The enemy currently targeted, if any. */
   targetName: string | null;
   targetHealth: number;

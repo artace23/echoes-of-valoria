@@ -20,3 +20,28 @@ export interface LocationDefinition {
   /** Minimum character level needed to enter. */
   requiredLevel: number;
 }
+
+export type EnemyId = "corrupted-wolf";
+
+/** What defeating an enemy can yield. Gold is rolled between the bounds. */
+export interface RewardTable {
+  xp: number;
+  goldMin: number;
+  goldMax: number;
+}
+
+/** A concrete reward, after rolling a RewardTable. */
+export interface Reward {
+  xp: number;
+  gold: number;
+}
+
+export interface EnemyDefinition {
+  id: EnemyId;
+  name: string;
+  healthMax: number;
+  /** Reduces incoming damage; see calculateDamage in game-core. */
+  defense: number;
+  attackDamage: number;
+  reward: RewardTable;
+}

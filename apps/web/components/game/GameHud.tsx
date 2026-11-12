@@ -110,6 +110,16 @@ export function GameHud({ store }: { store: GameStore }) {
           max={hud.staminaMax}
           fillClass={hud.sprinting ? "bg-gold" : "bg-gold-muted"}
         />
+        <dl className="flex justify-between border-t border-gold-muted/25 pt-2 text-[11px] uppercase tracking-[0.2em] text-ink-muted">
+          <div className="flex gap-2">
+            <dt>XP</dt>
+            <dd className="tabular-nums text-ink">{hud.xp}</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt>Gold</dt>
+            <dd className="tabular-nums text-gold">{hud.gold}</dd>
+          </div>
+        </dl>
       </div>
 
       <div className="absolute left-1/2 top-4 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col items-center gap-2">
@@ -127,6 +137,14 @@ export function GameHud({ store }: { store: GameStore }) {
               fillClass="bg-blood"
             />
           </div>
+        )}
+        {hud.notice && (
+          <p
+            role="status"
+            className="border border-gold/60 bg-surface/85 px-4 py-1.5 text-center text-sm text-gold"
+          >
+            {hud.notice}
+          </p>
         )}
       </div>
 

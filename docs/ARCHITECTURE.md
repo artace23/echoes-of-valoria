@@ -12,7 +12,9 @@ physics engine is installed.
 
 - `packages/game-core`: rules as pure functions (e.g. `movement.ts`: walking, sprint and
   stamina, jump, gravity; `combat.ts`: attack timing, dodge, block, cooldowns, damage,
-  hit arcs). No Babylon or React imports; covered by Vitest.
+  hit arcs; `enemyAi.ts`: idle/patrol/chase/attack state machine; `rewards.ts`). No Babylon
+  or React imports; covered by Vitest.
+- `packages/game-data`: enemy definitions (health, damage, reward table).
 - `apps/web/game/`: the 3D runtime. Imports Babylon and `game-core`, never React.
   - `engine/createGame.ts`: engine and scene lifecycle, frame loop, dispose.
   - `world/createEnvironment.ts`: ground, scenery, lights, shadows, fog.
@@ -20,6 +22,8 @@ physics engine is installed.
   - `player/PlayerController.ts`: applies movement rules to the mesh, resolves collisions.
   - `camera/ThirdPersonCamera.ts`: orbit camera following the player.
   - `combat/TrainingDummy.ts`: stationary practice target with a telegraphed attack.
+  - `enemies/Enemy.ts`: interface every strikeable target implements.
+  - `enemies/WolfEnemy.ts`: placeholder wolf driven by the game-core AI.
   - `state/GameStore.ts`: snapshot store the HUD subscribes to.
 - `apps/web/components/game/`: React canvas host and HUD. Reads `GameStore`; contains no
   game rules.
