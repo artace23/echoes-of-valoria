@@ -1,6 +1,7 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
+import { DEFAULT_COMBAT_CONFIG } from "@valoria/game-core";
 import type { GameStore } from "@/game/state/GameStore";
 
 function Bar({
@@ -37,6 +38,46 @@ function Bar({
   );
 }
 
+/** One action slot: key, name, and a cooldown shade that drains as it recovers. */
+function Skill({
+  hotkey,
+  name,
+  remaining,
+  total,
+  active = false,
+}: {
+  hotkey: string;
+  name: string;
+  remaining: number;
+  total: number;
+  active?: boolean;
+}) {
+  const cooling = remaining > 0;
+  const shade = total > 0 ? Math.min(100, (remaining / total) * 100) : 0;
+  return (
+    <li
+      className={`relative flex h-14 w-16 flex-col items-center justify-center overflow-hidden border bg-surface/85 ${
+        active ? "border-gold" : "border-gold-muted/50"
+      }`}
+    >
+      <div
+        className="absolute inset-x-0 bottom-0 bg-void/85"
+        style={{ height: `${shade}%` }}
+      />
+      <span
+        className={`relative font-display text-base ${
+          cooling ? "text-ink-muted" : "text-gold"
+        }`}
+      >
+        {cooling ? remaining.toFixed(1) : hotkey}
+      </span>
+      <span className="relative text-[10px] uppercase tracking-wider text-ink-muted">
+        {name}
+      </span>
+    </li>
+  );
+}
+
 const CONTROLS: [string, string][] = [
   ["WASD", "Move"],
   ["Drag / Arrows", "Look"],
@@ -51,6 +92,7 @@ export function GameHud({ store }: { store: GameStore }) {
     store.getSnapshot,
     store.getSnapshot,
   );
+  const combat = DEFAULT_COMBAT_CONFIG;
 
   return (
     <div className="pointer-events-none absolute inset-0 select-none">
@@ -70,19 +112,71 @@ export function GameHud({ store }: { store: GameStore }) {
         />
       </div>
 
-      <p className="absolute left-1/2 top-4 w-max max-w-[calc(100%-2rem)] -translate-x-1/2 border border-gold-muted/30 bg-surface/70 px-4 py-1.5 text-center text-xs tracking-wide text-ink-muted">
-        {hud.pointerLocked
-          ? "Move mouse to look around | WASD to move | Esc to release"
-          : "Drag to look around | WASD to move"}
-      </p>
+      <div className="absolute left-1/2 top-4 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col items-center gap-2">
+        <p className="border border-gold-muted/30 bg-surface/70 px-4 py-1.5 text-center text-xs tracking-wide text-ink-muted">
+          {hud.pointerLocked
+            ? "Move mouse to look around | WASD to move | Esc to release"
+            : "Drag to look around | WASD to move"}
+        </p>
+        {hud.targetName && (
+          <div className="w-64 border border-blood/50 bg-surface/80 p-2">
+            <Bar
+              label={hud.targetName}
+              value={hud.targetHealth}
+              max={hud.targetHealthMax}
+              fillClass="bg-blood"
+            />
+          </div>
+        )}
+      </div>
 
-      <ul className="absolute bottom-4 left-1/2 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-wrap justify-center gap-x-5 gap-y-1 border border-gold-muted/30 bg-surface/70 px-4 py-2 text-xs text-ink-muted">
-        {CONTROLS.map(([key, action]) => (
-          <li key={key}>
-            <span className="text-gold">{key}</span> {action}
-          </li>
-        ))}
-      </ul>
+      {hud.dead && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-void/60">
+          <p className="font-display text-3xl tracking-[0.3em] text-blood">
+            You have fallen
+          </p>
+          <p className="mt-3 text-sm text-ink-muted">
+            Returning to the starting circle in {hud.respawnIn}…
+          </p>
+        </div>
+      )}
+
+      <div className="absolute bottom-4 left-1/2 flex w-max max-w-[calc(100%-2rem)] -translate-x-1/2 flex-col items-center gap-2">
+        <ul className="flex gap-2">
+          <Skill
+            hotkey="F"
+            name="Attack"
+            remaining={hud.cooldownLight}
+            total={combat.light.cooldown}
+          />
+          <Skill
+            hotkey="R"
+            name="Heavy"
+            remaining={hud.cooldownHeavy}
+            total={combat.heavy.cooldown}
+          />
+          <Skill
+            hotkey="E"
+            name="Dodge"
+            remaining={hud.cooldownDodge}
+            total={combat.dodge.cooldown}
+          />
+          <Skill
+            hotkey="Q"
+            name="Block"
+            remaining={0}
+            total={0}
+            active={hud.blocking}
+          />
+        </ul>
+        <ul className="flex flex-wrap justify-center gap-x-5 gap-y-1 border border-gold-muted/30 bg-surface/70 px-4 py-2 text-xs text-ink-muted">
+          {CONTROLS.map(([key, action]) => (
+            <li key={key}>
+              <span className="text-gold">{key}</span> {action}
+            </li>
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }

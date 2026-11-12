@@ -1,10 +1,12 @@
-import type { MoveIntent } from "@valoria/game-core";
+import type { CombatIntent, MoveIntent } from "@valoria/game-core";
 
 const MOVE_KEYS = ["KeyW", "KeyA", "KeyS", "KeyD"];
 const LOOK_KEYS = ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"];
+const COMBAT_KEYS = ["KeyF", "KeyR", "KeyQ", "KeyE"];
 const GAME_KEYS = new Set([
   ...MOVE_KEYS,
   ...LOOK_KEYS,
+  ...COMBAT_KEYS,
   "ShiftLeft",
   "ShiftRight",
   "Space",
@@ -34,10 +36,15 @@ export interface LookDelta {
  * - drag: hold a button (or tap-drag / touch) and move, with pointer capture;
  * - arrow keys, and a horizontal two-finger swipe on a touchpad.
  * Movement keys and look input are tracked independently.
+ *
+ * Combat: F attack, R heavy attack, Q block (hold), E dodge. While the
+ * pointer is locked, left click also attacks and right click blocks.
  */
 export class InputManager {
   private readonly held = new Set<string>();
   private jumpQueued = false;
+  private dodgeQueued = false;
+  private readonly lockedButtons = new Set<number>();
   private lookX = 0;
   private lookY = 0;
   private zoom = 0;
@@ -52,6 +59,8 @@ export class InputManager {
     document.addEventListener("pointerlockchange", this.onPointerLockChange);
     // While locked, movement is reported on the document, not the canvas.
     document.addEventListener("mousemove", this.onLockedMouseMove);
+    document.addEventListener("mousedown", this.onLockedMouseDown);
+    document.addEventListener("mouseup", this.onLockedMouseUp);
     canvas.addEventListener("pointerdown", this.onPointerDown);
     canvas.addEventListener("pointermove", this.onPointerMove);
     canvas.addEventListener("pointerup", this.onPointerUp);
@@ -76,6 +85,18 @@ export class InputManager {
     };
   }
 
+  /** Combat intent for this frame. Consumes a queued dodge press. */
+  readCombatIntent(): CombatIntent {
+    const dodge = this.dodgeQueued;
+    this.dodgeQueued = false;
+    return {
+      light: this.held.has("KeyF") || this.lockedButtons.has(0),
+      heavy: this.held.has("KeyR"),
+      dodge,
+      block: this.held.has("KeyQ") || this.lockedButtons.has(2),
+    };
+  }
+
   /** Look input accumulated since the last call. */
   consumeLook(): LookDelta {
     const delta: LookDelta = {
@@ -97,6 +118,8 @@ export class InputManager {
     window.removeEventListener("blur", this.onBlur);
     document.removeEventListener("pointerlockchange", this.onPointerLockChange);
     document.removeEventListener("mousemove", this.onLockedMouseMove);
+    document.removeEventListener("mousedown", this.onLockedMouseDown);
+    document.removeEventListener("mouseup", this.onLockedMouseUp);
     this.canvas.removeEventListener("pointerdown", this.onPointerDown);
     this.canvas.removeEventListener("pointermove", this.onPointerMove);
     this.canvas.removeEventListener("pointerup", this.onPointerUp);
@@ -119,6 +142,7 @@ export class InputManager {
     if (!GAME_KEYS.has(event.code)) return;
     event.preventDefault();
     if (event.code === "Space" && !event.repeat) this.jumpQueued = true;
+    if (event.code === "KeyE" && !event.repeat) this.dodgeQueued = true;
     this.held.add(event.code);
   };
 
@@ -129,12 +153,15 @@ export class InputManager {
   private readonly onBlur = () => {
     this.held.clear();
     this.jumpQueued = false;
+    this.dodgeQueued = false;
+    this.lockedButtons.clear();
     this.dragPointerId = null;
   };
 
   private readonly onPointerLockChange = () => {
     // Entering or leaving lock ends any drag so the two modes never stack.
     this.dragPointerId = null;
+    this.lockedButtons.clear();
   };
 
   private readonly onPointerDown = (event: PointerEvent) => {
@@ -176,6 +203,14 @@ export class InputManager {
     const limit = (value: number) =>
       Math.max(-MAX_LOOK_STEP, Math.min(MAX_LOOK_STEP, value));
     this.addLook(limit(event.movementX), limit(event.movementY));
+  };
+
+  private readonly onLockedMouseDown = (event: MouseEvent) => {
+    if (this.pointerLocked) this.lockedButtons.add(event.button);
+  };
+
+  private readonly onLockedMouseUp = (event: MouseEvent) => {
+    this.lockedButtons.delete(event.button);
   };
 
   private readonly onContextMenu = (event: Event) => {

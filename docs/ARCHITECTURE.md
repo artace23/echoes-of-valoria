@@ -11,13 +11,15 @@ earlier PixiJS plan. Collision uses Babylon's built-in ellipsoid collision syste
 physics engine is installed.
 
 - `packages/game-core`: rules as pure functions (e.g. `movement.ts`: walking, sprint and
-  stamina, jump, gravity). No Babylon or React imports; covered by Vitest.
+  stamina, jump, gravity; `combat.ts`: attack timing, dodge, block, cooldowns, damage,
+  hit arcs). No Babylon or React imports; covered by Vitest.
 - `apps/web/game/`: the 3D runtime. Imports Babylon and `game-core`, never React.
   - `engine/createGame.ts`: engine and scene lifecycle, frame loop, dispose.
   - `world/createEnvironment.ts`: ground, scenery, lights, shadows, fog.
   - `input/InputManager.ts`: keyboard and mouse to per-frame intent.
   - `player/PlayerController.ts`: applies movement rules to the mesh, resolves collisions.
   - `camera/ThirdPersonCamera.ts`: orbit camera following the player.
+  - `combat/TrainingDummy.ts`: stationary practice target with a telegraphed attack.
   - `state/GameStore.ts`: snapshot store the HUD subscribes to.
 - `apps/web/components/game/`: React canvas host and HUD. Reads `GameStore`; contains no
   game rules.

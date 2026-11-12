@@ -1,10 +1,25 @@
-/** Game state the HUD renders. Replaced, never mutated, so React can compare by identity. */
+/**
+ * Game state the HUD renders. Flat primitives only, and replaced rather than
+ * mutated, so changes can be detected field by field.
+ */
 export interface HudSnapshot {
   health: number;
   healthMax: number;
   stamina: number;
   staminaMax: number;
   sprinting: boolean;
+  blocking: boolean;
+  dead: boolean;
+  /** Whole seconds until respawn while dead, otherwise 0. */
+  respawnIn: number;
+  /** Seconds of cooldown remaining, to one decimal place. */
+  cooldownLight: number;
+  cooldownHeavy: number;
+  cooldownDodge: number;
+  /** The enemy currently targeted, if any. */
+  targetName: string | null;
+  targetHealth: number;
+  targetHealthMax: number;
   pointerLocked: boolean;
 }
 

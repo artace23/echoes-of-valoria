@@ -11,3 +11,4 @@ export function isLocationUnlocked(
 }
 
 export * from "./movement";
+export * from "./combat";

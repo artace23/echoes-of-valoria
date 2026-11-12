@@ -16,7 +16,8 @@ prototype; progress is saved locally. Milestones 2–5 below describe the earlie
 
 3D prototype milestones:
 1. **Done** — 3D scene, player controller, third-person camera, movement, collision.
-2. Combat: sword attack, heavy attack, dodge, block, cooldowns, damage, death/respawn.
+2. **Done** — Combat: sword attack, heavy attack, dodge, block, cooldowns, damage,
+   death/respawn. Practised against a stationary training construct until the wolf exists.
 3. Enemy: placeholder wolf with idle, patrol, chase and attack states, and reward drops.
 4. Progression: level, XP, gold, stat growth.
 5. Inventory and equipment: pick up, store, use potions, equip a weapon.
