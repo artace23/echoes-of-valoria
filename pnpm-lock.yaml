@@ -17,6 +17,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@babylonjs/core':
+        specifier: 9.35.0
+        version: 9.35.0
       '@valoria/game-core':
         specifier: workspace:*
         version: link:../../packages/game-core
@@ -165,6 +168,9 @@ packages:
   '@babel/types@7.29.14':
     resolution: {integrity: sha512-UjI/dKmwJwT9pOszJitq2G6EObZPnsZUfdCr92z2TlF3EZK9J3EdfOKUrCzHl6wFthbzwhzl1Soc/UIwxRiq6w==}
     engines: {node: '>=6.9.0'}
+
+  '@babylonjs/core@9.35.0':
+    resolution: {integrity: sha512-qY2uU4gVC1GA7vPfLtnF57bPBBuu5nGnh9efGZVWtba9naxeeH+Nkj919vEFhoBvmiDxbRXMOBKLp/wWC0YzYA==}
 
   '@emnapi/runtime@1.11.3':
     resolution: {integrity: sha512-Xz4Tpyki7XyrpbUK1jR1AhdAdaXyhhY4lZ3neLodmhpuWfy2PAQN5B46sAiU4liOXGLkHypn/qU+jvfWSCYYLA==}
@@ -2673,6 +2679,8 @@ snapshots:
     dependencies:
       '@babel/helper-string-parser': 7.29.14
       '@babel/helper-validator-identifier': 7.29.7
+
+  '@babylonjs/core@9.35.0': {}
 
   '@emnapi/runtime@1.11.3':
     dependencies:

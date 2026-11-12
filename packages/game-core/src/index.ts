@@ -9,3 +9,5 @@ export function isLocationUnlocked(
 ): boolean {
   return characterLevel >= location.requiredLevel;
 }
+
+export * from "./movement";

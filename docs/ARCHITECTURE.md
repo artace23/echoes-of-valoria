@@ -5,6 +5,23 @@
 - `apps/mobile`: Expo / React Native client; shared game logic and mobile-native UI.
   Evaluate Skia for specific rendering needs after a prototype.
 
+### 3D prototype layout (current direction)
+The web client is a third-person 3D game on Babylon.js (`@babylonjs/core`), replacing the
+earlier PixiJS plan. Collision uses Babylon's built-in ellipsoid collision system; no
+physics engine is installed.
+
+- `packages/game-core`: rules as pure functions (e.g. `movement.ts`: walking, sprint and
+  stamina, jump, gravity). No Babylon or React imports; covered by Vitest.
+- `apps/web/game/`: the 3D runtime. Imports Babylon and `game-core`, never React.
+  - `engine/createGame.ts`: engine and scene lifecycle, frame loop, dispose.
+  - `world/createEnvironment.ts`: ground, scenery, lights, shadows, fog.
+  - `input/InputManager.ts`: keyboard and mouse to per-frame intent.
+  - `player/PlayerController.ts`: applies movement rules to the mesh, resolves collisions.
+  - `camera/ThirdPersonCamera.ts`: orbit camera following the player.
+  - `state/GameStore.ts`: snapshot store the HUD subscribes to.
+- `apps/web/components/game/`: React canvas host and HUD. Reads `GameStore`; contains no
+  game rules.
+
 ## Services
 - `services/game-server`: Node.js + Colyseus authoritative battle rooms.
 - Supabase: authentication and PostgreSQL persistence.

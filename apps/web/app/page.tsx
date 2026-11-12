@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { isLocationUnlocked } from "@valoria/game-core";
 import { CHARACTER_CLASSES, LOCATIONS } from "@valoria/game-data";
 import type { LocationDefinition } from "@valoria/game-types";
@@ -34,6 +35,13 @@ export default function Home() {
       <h1 className="mt-4 text-center font-display text-4xl tracking-wide text-gold sm:text-6xl">
         Echoes of Valoria
       </h1>
+
+      <Link
+        href="/play"
+        className="mt-8 border border-gold px-8 py-3 font-display text-sm uppercase tracking-[0.3em] text-gold transition-colors hover:bg-gold hover:text-void"
+      >
+        Enter Valoria
+      </Link>
 
       <section className="mt-12 w-full max-w-xl border border-gold-muted/40 bg-surface p-6 sm:p-8">
         <h2 className="font-display text-sm uppercase tracking-[0.3em] text-gold-muted">

@@ -10,6 +10,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@babylonjs/core": "9.35.0",
     "@valoria/game-core": "workspace:*",
     "@valoria/game-data": "workspace:*",
     "@valoria/game-types": "workspace:*",

@@ -8,6 +8,21 @@ packages stay platform-independent so mobile can be added later without rework.
 Status: Milestone 1 is done for web (workspace, Turborepo, TypeScript, Next.js +
 Tailwind app, shared package skeletons, scripts, environment example).
 
+## Direction change: 3D prototype (supersedes the 2D plan below)
+The game is now a browser-based third-person 3D RPG built on Babylon.js with primitive
+placeholder models. Multiplayer, Supabase and custom artwork are out of scope for the
+prototype; progress is saved locally. Milestones 2–5 below describe the earlier
+2D/PixiJS plan and are kept only for reference.
+
+3D prototype milestones:
+1. **Done** — 3D scene, player controller, third-person camera, movement, collision.
+2. Combat: sword attack, heavy attack, dodge, block, cooldowns, damage, death/respawn.
+3. Enemy: placeholder wolf with idle, patrol, chase and attack states, and reward drops.
+4. Progression: level, XP, gold, stat growth.
+5. Inventory and equipment: pick up, store, use potions, equip a weapon.
+6. Quest: defeat three corrupted wolves, with XP and gold on completion.
+7. Local save/load and the remaining HUD (enemy health, cooldowns, inventory, quest).
+
 ## Milestone 0 — Repository inspection and plan
 Inspect existing files and tooling. Do not overwrite an existing project blindly.
 
