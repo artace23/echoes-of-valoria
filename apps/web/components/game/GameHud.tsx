@@ -97,7 +97,10 @@ export function GameHud({ store }: { store: GameStore }) {
   return (
     <div className="pointer-events-none absolute inset-0 select-none">
       <div className="absolute left-4 top-4 w-56 space-y-3 border border-gold-muted/40 bg-surface/80 p-3 sm:w-64">
-        <p className="font-display text-sm tracking-wide text-gold">Warrior</p>
+        <p className="flex items-baseline justify-between font-display text-sm tracking-wide text-gold">
+          <span>Warrior</span>
+          <span>Level {hud.level}</span>
+        </p>
         <Bar
           label="Health"
           value={hud.health}
@@ -110,12 +113,28 @@ export function GameHud({ store }: { store: GameStore }) {
           max={hud.staminaMax}
           fillClass={hud.sprinting ? "bg-gold" : "bg-gold-muted"}
         />
-        <dl className="flex justify-between border-t border-gold-muted/25 pt-2 text-[11px] uppercase tracking-[0.2em] text-ink-muted">
-          <div className="flex gap-2">
-            <dt>XP</dt>
-            <dd className="tabular-nums text-ink">{hud.xp}</dd>
+        {hud.xpToNext > 0 ? (
+          <Bar
+            label="Experience"
+            value={hud.xp}
+            max={hud.xpToNext}
+            fillClass="bg-ink-muted"
+          />
+        ) : (
+          <p className="text-[11px] uppercase tracking-[0.2em] text-ink-muted">
+            Experience <span className="text-gold">Max level</span>
+          </p>
+        )}
+        <dl className="flex justify-between border-t border-gold-muted/25 pt-2 text-[11px] uppercase tracking-[0.15em] text-ink-muted">
+          <div className="flex gap-1.5">
+            <dt>Atk</dt>
+            <dd className="tabular-nums text-ink">+{hud.attackPower}</dd>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-1.5">
+            <dt>Def</dt>
+            <dd className="tabular-nums text-ink">{hud.defense}</dd>
+          </div>
+          <div className="flex gap-1.5">
             <dt>Gold</dt>
             <dd className="tabular-nums text-gold">{hud.gold}</dd>
           </div>

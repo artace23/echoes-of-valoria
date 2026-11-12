@@ -9,9 +9,11 @@ import {
   DEFAULT_COMBAT_CONFIG,
   DEFAULT_MOVEMENT_CONFIG,
   applyDamage,
+  calculateDamage,
   combatMoveFactor,
   createCombatState,
   createMovementState,
+  deriveStats,
   isInvulnerable,
   isWithinArc,
   resolveIncomingDamage,
@@ -19,9 +21,11 @@ import {
   stepMovement,
   type CombatActionKind,
   type CombatIntent,
+  type CharacterStats,
   type CombatState,
   type DamageOutcome,
   type MoveIntent,
+  type MovementConfig,
   type MovementState,
   type PlanarVector,
   type Strike,
@@ -32,7 +36,6 @@ const RADIUS = 0.4;
 const TURN_SHARPNESS = 14;
 /** Fell out of the world: put the player back at the spawn point. */
 const KILL_PLANE_Y = -20;
-const HEALTH_MAX = 100;
 const RESPAWN_SECONDS = 3;
 const HIT_FLASH_SECONDS = 0.18;
 const SWORD_LENGTH = 1.1;
@@ -57,8 +60,9 @@ export interface PlayerStrike extends Strike {
  */
 export class PlayerController {
   readonly body: Mesh;
-  readonly healthMax = HEALTH_MAX;
-  private currentHealth = HEALTH_MAX;
+  private characterStats: CharacterStats = deriveStats(1);
+  private movementConfig: MovementConfig = DEFAULT_MOVEMENT_CONFIG;
+  private currentHealth = this.characterStats.healthMax;
   private movement: MovementState = createMovementState();
   private combat: CombatState = createCombatState();
   private readonly displacement = new Vector3();
@@ -123,6 +127,37 @@ export class PlayerController {
     return this.currentHealth;
   }
 
+  get healthMax(): number {
+    return this.characterStats.healthMax;
+  }
+
+  get stats(): Readonly<CharacterStats> {
+    return this.characterStats;
+  }
+
+  /**
+   * Replace the Warrior's stats, e.g. after a level-up. `restore` refills
+   * health and stamina; otherwise current values are only capped to the new
+   * maximums.
+   */
+  applyStats(stats: CharacterStats, restore: boolean): void {
+    this.characterStats = stats;
+    this.movementConfig = {
+      ...DEFAULT_MOVEMENT_CONFIG,
+      staminaMax: stats.staminaMax,
+    };
+    if (this.dead) return;
+    this.currentHealth = restore
+      ? stats.healthMax
+      : Math.min(this.currentHealth, stats.healthMax);
+    this.movement = {
+      ...this.movement,
+      stamina: restore
+        ? stats.staminaMax
+        : Math.min(this.movement.stamina, stats.staminaMax),
+    };
+  }
+
   get dead(): boolean {
     return this.currentHealth <= 0;
   }
@@ -137,7 +172,7 @@ export class PlayerController {
   }
 
   get staminaMax(): number {
-    return DEFAULT_MOVEMENT_CONFIG.staminaMax;
+    return this.movementConfig.staminaMax;
   }
 
   get sprinting(): boolean {
@@ -223,6 +258,7 @@ export class PlayerController {
       },
       viewForward,
       dt,
+      this.movementConfig,
     );
     const wanted = step.displacement;
     if (this.combat.action?.kind === "dodge") {
@@ -267,6 +303,7 @@ export class PlayerController {
     if (!combatStep.strike) return null;
     return {
       ...combatStep.strike,
+      damage: combatStep.strike.damage + this.characterStats.attackPower,
       origin: { x: body.position.x, z: body.position.z },
       facing: this.facing,
     };
@@ -279,7 +316,8 @@ export class PlayerController {
   receiveAttack(damage: number, attacker: PlanarVector): DamageOutcome {
     if (this.dead) return "dodged";
     const origin = { x: this.body.position.x, z: this.body.position.z };
-    const result = resolveIncomingDamage(damage, {
+    const mitigated = calculateDamage(damage, this.characterStats.defense);
+    const result = resolveIncomingDamage(mitigated, {
       blocking: this.combat.blocking,
       invulnerable: isInvulnerable(this.combat),
       facingAttacker: isWithinArc(
@@ -364,10 +402,10 @@ export class PlayerController {
   }
 
   private respawn(): void {
-    this.currentHealth = HEALTH_MAX;
+    this.currentHealth = this.characterStats.healthMax;
     this.respawnTimer = 0;
     this.combat = createCombatState();
-    this.movement = createMovementState();
+    this.movement = createMovementState(this.movementConfig);
     this.body.position.copyFrom(this.options.spawnPoint);
     this.poseSword();
   }

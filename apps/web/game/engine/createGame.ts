@@ -1,7 +1,13 @@
 import "@babylonjs/core/Collisions/collisionCoordinator";
 import { Engine } from "@babylonjs/core/Engines/engine";
 import { Scene } from "@babylonjs/core/scene";
-import { isWithinArc } from "@valoria/game-core";
+import {
+  createCharacterProgress,
+  deriveStats,
+  grantReward,
+  isWithinArc,
+  xpToNextLevel,
+} from "@valoria/game-core";
 import { CORRUPTED_WOLF } from "@valoria/game-data";
 import { ThirdPersonCamera } from "../camera/ThirdPersonCamera";
 import { TrainingDummy } from "../combat/TrainingDummy";
@@ -47,8 +53,8 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
   for (const mesh of player.meshes) environment.addShadowCaster(mesh);
   const camera = new ThirdPersonCamera(scene, player.position);
 
-  // Running totals from defeated enemies. Levels come with progression.
-  const loot = { xp: 0, gold: 0 };
+  let progress = createCharacterProgress();
+  player.applyStats(deriveStats(progress.level), true);
   let notice: string | null = null;
   let noticeTimer = 0;
 
@@ -67,9 +73,14 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
         z: environment.encounterArea.z + Math.sin(angle) * WOLF_HOME_RADIUS,
       },
       onDeath: (reward, wolf) => {
-        loot.xp += reward.xp;
-        loot.gold += reward.gold;
+        const result = grantReward(progress, reward);
+        progress = result.progress;
         notice = `${wolf.name} slain: +${reward.xp} XP, +${reward.gold} gold`;
+        if (result.levelsGained > 0) {
+          // Levelling up raises stats and fully restores the Warrior.
+          player.applyStats(deriveStats(progress.level), true);
+          notice = `Level up! You are now level ${progress.level}`;
+        }
         noticeTimer = NOTICE_SECONDS;
       },
     });
@@ -116,8 +127,12 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       cooldownLight: tenths(player.cooldowns.light),
       cooldownHeavy: tenths(player.cooldowns.heavy),
       cooldownDodge: tenths(player.cooldowns.dodge),
-      xp: loot.xp,
-      gold: loot.gold,
+      level: progress.level,
+      xp: progress.xp,
+      xpToNext: xpToNextLevel(progress.level),
+      gold: progress.gold,
+      attackPower: player.stats.attackPower,
+      defense: player.stats.defense,
       notice,
       targetName: target?.name ?? null,
       targetHealth: target?.health ?? 0,
@@ -173,7 +188,9 @@ export function createGame(canvas: HTMLCanvasElement): GameHandle {
       camera,
       dummy,
       wolves,
-      loot,
+      get progress() {
+        return progress;
+      },
     };
   }
 

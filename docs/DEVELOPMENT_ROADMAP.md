@@ -20,7 +20,8 @@ prototype; progress is saved locally. Milestones 2–5 below describe the earlie
    death/respawn. Practised against a stationary training construct until the wolf exists.
 3. **Done** — Enemy: placeholder wolf with idle, patrol, chase and attack states, and
    XP/gold reward drops. Three wolves live in the encounter clearing.
-4. Progression: level, XP, gold, stat growth.
+4. **Done** — Progression: level, XP, gold, and stats derived from level (health, stamina,
+   attack power, defense). Levelling up restores the Warrior.
 5. Inventory and equipment: pick up, store, use potions, equip a weapon.
 6. Quest: defeat three corrupted wolves, with XP and gold on completion.
 7. Local save/load and the remaining HUD (enemy health, cooldowns, inventory, quest).
