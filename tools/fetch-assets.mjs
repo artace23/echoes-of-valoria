@@ -52,7 +52,11 @@ const POLYHAVEN_MODEL_MAPS = [
 ];
 
 /** ambientCG assets: one zip each. */
-const AMBIENTCG = [["Foliage001", "1K-JPG"]];
+const AMBIENTCG = [
+  ["Foliage001", "1K-JPG"],
+  // Night sky for image-based lighting and the visible sky.
+  ["NightSkyHDRI003", "1K"],
+];
 
 const megabytes = (bytes) => `${(bytes / 1048576).toFixed(1)} MB`;
 

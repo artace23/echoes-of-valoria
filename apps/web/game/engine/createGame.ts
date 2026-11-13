@@ -117,6 +117,17 @@ export interface GameActions {
   resetProgress(): void;
 }
 
+/** Where start-up has got to, for the loading screen. */
+export interface LoadProgress {
+  /** What is happening now, in a few words. */
+  label: string;
+  /** Overall progress from 0 to 1. */
+  fraction: number;
+}
+
+/** Share of the loading bar given to downloading models; the rest is building the world. */
+const ASSET_SHARE = 0.85;
+
 export interface GameHandle {
   /** Live game state for the HUD. */
   store: GameStore;
@@ -144,11 +155,22 @@ function seededRandom(seed: number): () => number {
  */
 export async function createGame(
   canvas: HTMLCanvasElement,
+  onProgress?: (progress: LoadProgress) => void,
 ): Promise<GameHandle> {
   const engine = new Engine(canvas, true, { stencil: false });
   const scene = new Scene(engine);
 
-  const assets = await AssetLibrary.load(scene);
+  const assets = await AssetLibrary.load(scene, (loaded, total) => {
+    onProgress?.({
+      label: total > 0 ? `Loading models (${loaded} of ${total})` : "Loading",
+      fraction: total > 0 ? (loaded / total) * ASSET_SHARE : ASSET_SHARE,
+    });
+  });
+
+  // Building the world blocks for a moment, so let the loading screen
+  // paint the new label first.
+  onProgress?.({ label: "Building the world", fraction: ASSET_SHARE });
+  await new Promise<void>((resolve) => setTimeout(resolve, 30));
 
   // The camera exists before the world so cascaded shadows can follow it.
   const camera = new ThirdPersonCamera(

@@ -15,6 +15,7 @@ import type { AssetLibrary } from "../assets/AssetLibrary";
 import { buildForest, isReserved, type ForestReport } from "./buildForest";
 import { buildGrass } from "./buildGrass";
 import { buildVillage } from "./buildVillage";
+import { createSky } from "./createSky";
 import { createGroundDetail } from "./groundDetail";
 import { WorldKit, type MaterialKey } from "./WorldKit";
 
@@ -150,6 +151,11 @@ export function createEnvironment(
   gateLight.specular = new Color3(0.4, 0.27, 0.14);
   gateLight.intensity = 1.1;
   gateLight.range = 16;
+
+  // A night sky, where one has been sourced. Without it the background is
+  // the flat fog colour.
+  const skyUrl = assets.environmentUrl("night-sky");
+  if (skyUrl) createSky(scene, skyUrl);
 
   const kit = new WorldKit(scene);
 

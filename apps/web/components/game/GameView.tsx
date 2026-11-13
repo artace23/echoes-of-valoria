@@ -1,14 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { GameHandle } from "@/game/engine/createGame";
+import type { GameHandle, LoadProgress } from "@/game/engine/createGame";
 import { GameHud } from "./GameHud";
+import { LoadingScreen } from "./LoadingScreen";
 
 /** Mounts the 3D game on a canvas and overlays the HUD. */
 export function GameView() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [game, setGame] = useState<GameHandle | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState<LoadProgress>({
+    label: "Preparing",
+    fraction: 0,
+  });
 
   useEffect(() => {
     let cancelled = false;
@@ -20,7 +25,9 @@ export function GameView() {
       .then(({ createGame }) => {
         const canvas = canvasRef.current;
         if (cancelled || !canvas) return null;
-        return createGame(canvas);
+        return createGame(canvas, (next) => {
+          if (!cancelled) setProgress(next);
+        });
       })
       .then((created) => {
         if (!created) return;
@@ -56,11 +63,7 @@ export function GameView() {
         className="block h-full w-full touch-none outline-none"
       />
       {game && <GameHud store={game.store} actions={game.actions} />}
-      {!game && !error && (
-        <p className="absolute inset-0 flex items-center justify-center font-display tracking-[0.3em] text-gold-muted">
-          Loading…
-        </p>
-      )}
+      {!game && !error && <LoadingScreen progress={progress} />}
       {error && (
         <p className="absolute inset-0 flex items-center justify-center px-6 text-center text-blood">
           {error}

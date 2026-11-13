@@ -315,6 +315,13 @@ textures.push({
   files: { color: "textures/grass-blades.png" },
 });
 
+// Night sky: the HDR panorama, copied as it is.
+await mkdir(join(OUT, "environments"), { recursive: true });
+await copyFile(
+  join(SRC, "NightSkyHDRI003", "extracted", "NightSkyHDRI003_1K_HDR.exr"),
+  join(OUT, "environments", "night-sky.exr"),
+);
+
 const manifest = {
   version: 1,
   about:
@@ -338,8 +345,9 @@ const manifest = {
   environments: [
     {
       id: "night-sky",
-      description: "Moonlit night sky as a prefiltered .env or .hdr, for image-based lighting and a visible sky. Not sourced.",
-      file: null,
+      description:
+        'Moonlit night sky, for image-based lighting and the visible sky. ambientCG "NightSkyHDRI003" (CC0), 1K EXR.',
+      file: "environments/night-sky.exr",
     },
   ],
 };

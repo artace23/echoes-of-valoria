@@ -616,8 +616,8 @@
   "environments": [
     {
       "id": "night-sky",
-      "description": "Moonlit night sky as a prefiltered .env or .hdr, for image-based lighting and a visible sky. Not sourced.",
-      "file": null
+      "description": "Moonlit night sky, for image-based lighting and the visible sky. ambientCG \"NightSkyHDRI003\" (CC0), 1K EXR.",
+      "file": "environments/night-sky.exr"
     }
   ]
 }

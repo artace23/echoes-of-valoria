@@ -17,6 +17,9 @@ import type { Node } from "@babylonjs/core/node";
 import type { Scene } from "@babylonjs/core/scene";
 
 const ASSET_ROOT = "/assets/";
+/** How strongly lights and the sky act on physically based models. */
+const PBR_DIRECT_INTENSITY = 1.7;
+const PBR_ENVIRONMENT_INTENSITY = 1.6;
 /** Brightness multiplier applied to loaded models' colour maps. */
 const SCAN_LIFT = 1.25;
 
@@ -123,19 +126,33 @@ export class AssetLibrary {
   private readonly containers = new Map<string, Promise<AssetContainer>>();
   private readonly converted = new Map<Material, StandardMaterial>();
   private colliderTemplate: Mesh | null = null;
+  /**
+   * Whether loaded models keep their physically based materials. They do
+   * when the manifest has a sky environment to light them; otherwise they
+   * are converted to standard shading.
+   */
+  private readonly physicallyBased: boolean;
 
   private constructor(
     private readonly scene: Scene,
     private readonly manifest: AssetManifest,
     private readonly root: string,
-  ) {}
+  ) {
+    this.physicallyBased = (manifest.environments ?? []).some(
+      (entry) => entry.file !== null,
+    );
+  }
 
   /**
    * Read the manifest and load every sourced model. Never throws: a missing
    * manifest or a broken file is recorded and the game carries on with
-   * placeholders.
+   * placeholders. `onProgress` is called as each model finishes loading.
    */
-  static async load(scene: Scene, root: string = ASSET_ROOT): Promise<AssetLibrary> {
+  static async load(
+    scene: Scene,
+    onProgress?: (loaded: number, total: number) => void,
+    root: string = ASSET_ROOT,
+  ): Promise<AssetLibrary> {
     let manifest: AssetManifest = { version: 1, models: [] };
     try {
       const response = await fetch(`${root}manifest.json`, { cache: "no-cache" });
@@ -148,10 +165,14 @@ export class AssetLibrary {
     }
 
     const library = new AssetLibrary(scene, manifest, root);
+    const sourced = manifest.models.filter((spec) => spec.file !== null);
+    let loaded = 0;
+    onProgress?.(0, sourced.length);
     await Promise.all(
-      manifest.models
-        .filter((spec) => spec.file !== null)
-        .map((spec) => library.loadModel(spec)),
+      sourced.map(async (spec) => {
+        await library.loadModel(spec);
+        onProgress?.(++loaded, sourced.length);
+      }),
     );
     return library;
   }
@@ -167,6 +188,14 @@ export class AssetLibrary {
 
   has(id: string): boolean {
     return this.models.has(id);
+  }
+
+  /** URL of an environment in the manifest, or null if it has not been sourced. */
+  environmentUrl(id: string): string | null {
+    const file = this.manifest.environments?.find(
+      (entry) => entry.id === id,
+    )?.file;
+    return file ? this.root + file : null;
   }
 
   /**
@@ -215,7 +244,7 @@ export class AssetLibrary {
           if (!lodMesh) return;
           // LOD files carry no textures; they borrow the full model's
           // material, so the surface matches as the detail drops.
-          lodMesh.material = this.standardMaterial(source.material);
+          lodMesh.material = this.sceneMaterial(source.material);
           lodMesh.isPickable = false;
           lodMesh.receiveShadows = true;
           source.addLODLevel(lod.distance, lodMesh);
@@ -230,7 +259,7 @@ export class AssetLibrary {
       for (const source of sources) {
         source.isPickable = false;
         source.receiveShadows = true;
-        source.material = this.standardMaterial(source.material);
+        source.material = this.sceneMaterial(source.material);
       }
       this.models.set(spec.id, {
         spec,
@@ -356,6 +385,22 @@ export class AssetLibrary {
     return reports;
   }
 
+  /** The material a loaded model is drawn with in this scene. */
+  private sceneMaterial(material: Material | null): Material | null {
+    if (!material || material.getClassName() !== "PBRMaterial") return material;
+    if (!this.physicallyBased) return this.standardMaterial(material);
+
+    const physical = material as PBRMaterial;
+    // Files are mirrored into Babylon's left-handed space, which reverses
+    // the winding order two-sided lighting relies on. The models' own
+    // normals are correct, so they are used as they are.
+    physical.twoSidedLighting = false;
+    // Balance against the rest of the world, which uses standard shading.
+    physical.directIntensity = PBR_DIRECT_INTENSITY;
+    physical.environmentIntensity = PBR_ENVIRONMENT_INTENSITY;
+    return physical;
+  }
+
   /**
    * The standard-shaded equivalent of a loaded glTF material.
    *
@@ -411,11 +456,11 @@ export class AssetLibrary {
     if (!pending) {
       pending = LoadAssetContainerAsync(this.root + file, this.scene, {
         pluginOptions: {
-          // Keep colour maps in gamma space, like every other texture in the
-          // scene. The loader's default decodes them to linear, which the
-          // standard materials used here would then show several times too
-          // dark.
-          gltf: { useSRGBBuffers: false },
+          // Physically based materials want colour maps decoded to linear
+          // (the loader's default). Standard materials want them left in
+          // gamma space, like every other texture in the scene, or they
+          // show several times too dark.
+          gltf: { useSRGBBuffers: this.physicallyBased },
         },
       }).then(
         (container) => {
